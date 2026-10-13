@@ -30,7 +30,7 @@ public sealed partial class BestOfferMod
                 g.Items.Select(ItemDifferenceSignature).Distinct(StringComparer.Ordinal).Skip(1).Any()))
             .Where(g => selectedFilter == 0 || g.Items.Any(i =>
                 selectedFilter == 1 ? i.Eligible : selectedFilter == 2 ? (Rule(i) & 1) != 0 :
-                selectedFilter == 3 && (Rule(i) & 2) != 0)).ToList();
+                selectedFilter == 3 && ((Rule(i) & 2) != 0 || i.RiskBlocked))).ToList();
     }
 
     int GroupOwnRuleCount(InventoryRuleGroup group, int rule) => group.Items.Count(i => OwnRule(i.Key) == rule);
@@ -45,12 +45,14 @@ public sealed partial class BestOfferMod
         if (change.ChangedCount > 0)
         { revision++; plans.Clear(); showConfirm = false; SaveRules(); }
         if (rule == 0)
-        { status = $"「{group.Name}」的 {group.Count} 件单件规则已清除；容器内容规则保留。请重新计算。"; return; }
+        { status = $"「{group.Name}」的 {group.Count} 件单件规则已清除；容器内容规则保留。" + RuleNextStep(); return; }
         string label = rule == 1 ? "必卖" : "禁卖";
         string opposite = rule == 1 ? "禁卖" : "必卖";
         status = $"「{group.Name}」{label} {change.AppliedCount} / {group.Count} 件" +
-            (change.OppositeCount > 0 ? $"；保留 {change.OppositeCount} 件{opposite}" : "") + "。请重新计算。";
+            (change.OppositeCount > 0 ? $"；保留 {change.OppositeCount} 件{opposite}" : "") + "。" + RuleNextStep();
     }
+
+    string RuleNextStep() => snapshot?.CanTrade == true ? "请重新计算。" : "已保存，买家到来后应用。";
 
     static string ItemDifferenceSignature(TradeItem item)
     {
@@ -69,7 +71,8 @@ public sealed partial class BestOfferMod
                 for (int n = 0; n < features.Count; n++)
                 {
                     var f = features[n];
-                    if (f != null) values.Add($"{f.identifier}:{f.GetCurrentValueMod().ToString(CultureInfo.InvariantCulture)}:{f.isDisabled}:{f.IsExposed()}");
+                    if (f != null && f.IsExposed() && !f.isDisabled)
+                        values.Add($"{f.identifier}:{f.GetCurrentValueMod().ToString(CultureInfo.InvariantCulture)}");
                 }
             values.Sort(StringComparer.Ordinal);
             return data + "\u001f" + native.unitCount + "\u001f" + string.Join("\u001e", values);

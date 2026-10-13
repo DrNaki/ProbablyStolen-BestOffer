@@ -11,7 +11,7 @@ using MelonLoader.Utils;
 using UnityEngine;
 using DeepSpaceModSupport;
 
-[assembly: MelonInfo(typeof(DeepSpaceBestOffer.BestOfferMod), "最佳报价 / Best Offer", "1.4.0", "Naki & Codex")]
+[assembly: MelonInfo(typeof(DeepSpaceBestOffer.BestOfferMod), "最佳报价 / Best Offer", "1.4.1", "Naki & Codex")]
 [assembly: MelonGame("Questing Goose Studio", "Probably Stolen")]
 
 namespace DeepSpaceBestOffer;
@@ -43,6 +43,8 @@ public sealed partial class BestOfferMod : MelonMod
     bool suppressMouseUntilReleased;
     bool includeShowcase = true, includeHiddenStorage = true, includeContainerContents;
     bool allowOverBudget, overBudgetPercent = true;
+    bool blockContraband, blockStolen;
+    bool allowContrabandDemandExceptions, allowStolenDemandExceptions;
     int captureHotkey;
     string overBudgetInput = "10";
     decimal lastValidOverBudgetValue = 10m;
@@ -68,6 +70,9 @@ public sealed partial class BestOfferMod : MelonMod
                     throw new InvalidDataException("报价选项无效，使用默认设置。");
                 includeShowcase = saved.IncludeShowcase; includeHiddenStorage = saved.IncludeHiddenStorage;
                 includeContainerContents = saved.IncludeContainerContents; allowOverBudget = saved.AllowOverBudget;
+                blockContraband = saved.BlockContraband; blockStolen = saved.BlockStolen;
+                allowContrabandDemandExceptions = saved.AllowContrabandDemandExceptions;
+                allowStolenDemandExceptions = saved.AllowStolenDemandExceptions;
                 overBudgetPercent = saved.OverBudgetMode == OverBudgetMode.Percent;
                 overBudgetInput = saved.OverBudgetValue.ToString(CultureInfo.InvariantCulture);
                 lastValidOverBudgetValue = saved.OverBudgetValue;
@@ -90,7 +95,7 @@ public sealed partial class BestOfferMod : MelonMod
             prefix: new HarmonyMethod(typeof(BestOfferMod), nameof(ResolveNativeEscape)));
         HarmonyInstance.Patch(AccessTools.Method(typeof(EscapeUIManager), "OpenEscapeMenu"),
             prefix: new HarmonyMethod(typeof(BestOfferMod), nameof(AllowGameInput)));
-        LoggerInstance.Msg($"最佳报价 v1.4.0 已载入；{panelHotkey} 打开，交易 iPad 内打开最佳报价，默认按同名商品一起设置规则。");
+        LoggerInstance.Msg($"最佳报价 v1.4.1 已载入；{panelHotkey} 打开报价配置，可提前设置库存规则与自动禁卖保护。");
     }
 
     static bool AllowGameInput() => Current?.ShouldBlockNativeInput() != true;
@@ -115,6 +120,9 @@ public sealed partial class BestOfferMod : MelonMod
         {
             IncludeShowcase = includeShowcase, IncludeHiddenStorage = includeHiddenStorage,
             IncludeContainerContents = includeContainerContents, AllowOverBudget = allowOverBudget,
+            BlockContraband = blockContraband, BlockStolen = blockStolen,
+            AllowContrabandDemandExceptions = allowContrabandDemandExceptions,
+            AllowStolenDemandExceptions = allowStolenDemandExceptions,
             OverBudgetMode = overBudgetPercent ? OverBudgetMode.Percent : OverBudgetMode.Credits,
             OverBudgetValue = limit, PanelHotkey = panelHotkey, AuditHotkey = auditHotkey,
             ToolbarX = toolbarX, ToolbarY = toolbarY
@@ -129,7 +137,7 @@ public sealed partial class BestOfferMod : MelonMod
     void OptionsChanged()
     {
         revision++; plans.Clear(); showConfirm = false; itemPage = 0; refreshAt = 0;
-        status = "报价选项已更改，请重新计算。";
+        status = snapshot?.CanTrade == true ? "报价选项已更改，请重新计算。" : "设置已保存；买家到来后按规则筛选。";
         SaveSettings();
     }
 
@@ -203,7 +211,7 @@ public sealed partial class BestOfferMod : MelonMod
                     snapshot = current; plans.Clear(); revision++; showConfirm = false;
                     status = allowOverBudget && !TryOverBudgetNumber(out _)
                         ? "请输入有效的非负上限；点击数字框后可用 Ctrl+A 全选替换。"
-                        : "顾客、价格、货源或库存已变化，请重新计算。";
+                        : current.CanTrade ? "顾客、价格、货源或库存已变化，请重新计算。" : current.Message;
                 }
             }
             if (pending != null && pending.Work.IsCompleted)
@@ -359,7 +367,9 @@ public sealed partial class BestOfferMod : MelonMod
     void SetRule(TradeItem i, int rule)
     {
         if (rule == 0) rules.Remove(i.Key); else rules[i.Key] = rule;
-        revision++; plans.Clear(); showConfirm = false; status = "筛选条件已更改，请重新计算。"; SaveRules();
+        revision++; plans.Clear(); showConfirm = false;
+        status = snapshot?.CanTrade == true ? "筛选条件已更改，请重新计算。" : "规则已保存，买家到来后应用。";
+        SaveRules();
     }
     void Calculate(bool quickApply = false)
     {

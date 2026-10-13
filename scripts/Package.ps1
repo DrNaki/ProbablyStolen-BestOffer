@@ -1,7 +1,7 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$GameDir = 'E:\Steam\steamapps\common\Probably Stolen Demo',
-    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '1.4.0'
+    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '1.4.1'
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -14,7 +14,7 @@ $utf8 = New-Object Text.UTF8Encoding($false)
 $zipNameEncoding = [Text.Encoding]::UTF8
 $loaderManifestPath = Join-Path $projectDir 'tools\melonloader\v0.7.3-files.json'
 $expectedLoaderManifestHash = '5D0D5CEFAA2F7C5D4F652254B1710427E34007B9171038860E2C278C92C256F5'
-$knownRollbackHash = 'DB54939F01111884B706AD80614AC9FF452EA35C0641E4C5A0C9BFA678A21EF2'
+$knownRollbackHash = '774BD3C870AF4A77B4484BDD416F81A93D30E0435D235C7EA123110D6BDB4ECE'
 
 function Get-Sha([string]$Path) {
     $algorithm = [Security.Cryptography.SHA256]::Create()
@@ -49,14 +49,14 @@ $null = Get-SafeSource 'README.md'
 $null = Get-SafeSource 'THIRD-PARTY-NOTICES.md'
 $null = Get-SafeSource 'tools/melonloader/v0.7.3-files.json'
 $rollbackSourceRelative = ''
-foreach ($candidate in @('rollback/BestOffer-1.3.1.zip', 'release/BestOffer-1.3.1.zip')) {
+foreach ($candidate in @('rollback/BestOffer-1.4.0.zip', 'release/BestOffer-1.4.0.zip')) {
     if (Test-Path -LiteralPath (Join-Path $projectDir $candidate) -PathType Leaf) {
         $rollbackSourceRelative = $candidate
         break
     }
 }
 if (!$rollbackSourceRelative -or (Get-Sha (Get-SafeSource $rollbackSourceRelative)) -ne $knownRollbackHash) {
-    throw '缺少经过固定 SHA256 验证的 1.3.1 旧发布包，不能生成可回退的新版本。'
+    throw '缺少经过固定 SHA256 验证的 1.4.0 基线发布包，不能生成可回退的新版本。'
 }
 if ((Get-Sha $loaderManifestPath) -ne $expectedLoaderManifestHash) {
     throw 'MelonLoader 原包文件清单校验失败，拒绝把未核验的加载器文件放入发布包。'
@@ -110,8 +110,10 @@ Add-Payload 'tests/KeyChord.Tests/KeyChord.Tests.csproj'
 Add-Payload 'tests/KeyChord.Tests/Program.cs'
 Add-Payload 'tests/ItemRuleGroups.Tests/ItemRuleGroups.Tests.csproj'
 Add-Payload 'tests/ItemRuleGroups.Tests/Program.cs'
+Add-Payload 'tests/RiskPolicy.Tests/RiskPolicy.Tests.csproj'
+Add-Payload 'tests/RiskPolicy.Tests/Program.cs'
 foreach ($name in @('Build', 'Install', 'Uninstall', 'Package', 'Rollback')) { Add-Payload ('scripts/' + $name + '.ps1') }
-Add-Payload 'rollback/BestOffer-1.3.1.zip' $rollbackSourceRelative
+Add-Payload 'rollback/BestOffer-1.4.0.zip' $rollbackSourceRelative
 foreach ($source in @(Get-ChildItem -LiteralPath (Join-Path $projectDir 'src\BestOffer') -File)) {
     if (@('.cs', '.csproj') -contains $source.Extension.ToLowerInvariant()) {
         Add-Payload ('src/BestOffer/' + $source.Name)

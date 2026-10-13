@@ -189,5 +189,5 @@ $manifestTemp = Get-GamePath 'UserData\BestOfferInstaller\install-manifest.json.
 [IO.File]::WriteAllText($manifestTemp, ($manifest | ConvertTo-Json -Depth 6), (New-Object Text.UTF8Encoding($false)))
 Move-Item -LiteralPath $manifestTemp -Destination $manifestPath -Force
 Write-Host "最佳报价已安装：$modPath"
-Write-Host '启动游戏后，在店内点击「最佳报价」或按 F8。首次启动会生成互操作程序集，耗时可能较长。'
+Write-Host '启动游戏后，在交易 iPad 点击齿轮「报价配置」或按 F8。首次启动会生成互操作程序集，耗时可能较长。'
 Write-Host '安装不修改存档。'

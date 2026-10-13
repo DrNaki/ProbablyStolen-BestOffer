@@ -10,6 +10,11 @@ public sealed class TradeOptions
     public bool IncludeShowcase { get; set; } = true;
     public bool IncludeHiddenStorage { get; set; } = true;
     public bool IncludeContainerContents { get; set; }
+    // Opt-in defaults preserve behavior when loading settings from 1.4.0.
+    public bool BlockContraband { get; set; }
+    public bool BlockStolen { get; set; }
+    public bool AllowContrabandDemandExceptions { get; set; }
+    public bool AllowStolenDemandExceptions { get; set; }
     public bool AllowOverBudget { get; set; }
     public OverBudgetMode OverBudgetMode { get; set; } = OverBudgetMode.Percent;
     public decimal OverBudgetValue { get; set; } = 10m;

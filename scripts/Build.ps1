@@ -22,6 +22,9 @@ if (!$SkipTests) {
     Write-Host '正在验证同名商品分组与数量规则……'
     & dotnet run --project (Join-Path $projectDir 'tests\ItemRuleGroups.Tests\ItemRuleGroups.Tests.csproj') --configuration $Configuration
     if ($LASTEXITCODE -ne 0) { throw "同名商品规则测试失败，退出码 $LASTEXITCODE。" }
+    Write-Host '正在验证自动禁卖保护与买家明确需求……'
+    & dotnet run --project (Join-Path $projectDir 'tests\RiskPolicy.Tests\RiskPolicy.Tests.csproj') --configuration $Configuration
+    if ($LASTEXITCODE -ne 0) { throw "自动禁卖保护测试失败，退出码 $LASTEXITCODE。" }
 }
 Write-Host '正在构建最佳报价 Mod……'
 $buildArguments = @('build', (Join-Path $projectDir 'src\BestOffer\BestOffer.csproj'), '--configuration', $Configuration, '--nologo', "-p:GameDir=$gameRoot")

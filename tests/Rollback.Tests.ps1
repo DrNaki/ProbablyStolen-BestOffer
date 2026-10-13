@@ -53,44 +53,20 @@ function Make-CustomZip([string]$Path, [bool]$BadHash, [bool]$UnsafePath) {
     } finally { $zip.Dispose() }
 }
 
-$oldZip = Join-Path $project 'release\BestOffer-1.3.1.zip'
-if (!(Test-Path -LiteralPath $oldZip)) { $oldZip = Join-Path $project 'rollback\BestOffer-1.3.1.zip' }
+$oldZip = Join-Path $project 'release\BestOffer-1.4.0.zip'
+if (!(Test-Path -LiteralPath $oldZip)) { $oldZip = Join-Path $project 'rollback\BestOffer-1.4.0.zip' }
 $oldZipHash = Hash $oldZip
-Check ($oldZipHash -eq 'DB54939F01111884B706AD80614AC9FF452EA35C0641E4C5A0C9BFA678A21EF2') 'Stable 1.3.1 release hash changed'
-$oldDllHash = '9D19A7A075A960290B61E00D6801A1F9618EA0B8B0363537021B9EA37798C2E1'
-$oldPdbHash = '385F79D118499E097AA1532DA6E1486F0A71AEE08639DF831450C4F7C46595FC'
+Check ($oldZipHash -eq '774BD3C870AF4A77B4484BDD416F81A93D30E0435D235C7EA123110D6BDB4ECE') 'Stable 1.4.0 release hash changed'
+$oldDllHash = '3225437CB5EC9E29BEFB0A207A365DFA9EF793D9267515BB93F675CE69F380DC'
+$oldPdbHash = '1238B91DBDFB7B3019A1CCE1717250FC8A59D057B891315A1F96F4683CE458A3'
 
-function Get-NestedRelease([string]$OuterZip, [string]$Version) {
-    $outer = [IO.Compression.ZipFile]::OpenRead($OuterZip)
-    try {
-        $nested = $outer.GetEntry('rollback/BestOffer-' + $Version + '.zip')
-        Check ($null -ne $nested) "Archive is missing the nested $Version release"
-        $target = Join-Path $fixture ('nested-' + $Version + '\BestOffer-' + $Version + '.zip')
-        [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($target)) | Out-Null
-        $inputStream = $nested.Open(); $outputStream = [IO.File]::Create($target)
-        try { $inputStream.CopyTo($outputStream) } finally { $inputStream.Dispose(); $outputStream.Dispose() }
-        return $target
-    } finally { $outer.Dispose() }
-}
-$v110Zip = Join-Path $project 'release\BestOffer-1.1.0.zip'
-if (!(Test-Path -LiteralPath $v110Zip)) { $v110Zip = Join-Path $project 'rollback\BestOffer-1.1.0.zip' }
-if (!(Test-Path -LiteralPath $v110Zip)) { $v110Zip = Get-NestedRelease $oldZip '1.1.0' }
-$v110ZipHash = Hash $v110Zip
-Check ($v110ZipHash -eq 'F8CE39934260561AB3AAA5E14A2BF368944115D67C5DC786E5385B6AE20166A0') 'Stable 1.1 release hash changed'
-$v100Zip = Join-Path $project 'release\BestOffer-1.0.0.zip'
-if (!(Test-Path -LiteralPath $v100Zip)) {
-    # Portable 1.4 contains 1.3.1, which retains the 1.1 -> 1.0 archives.
-    $v100Zip = Get-NestedRelease $v110Zip '1.0.0'
-}
-$v100ZipHash = Hash $v100Zip
-Check ($v100ZipHash -eq 'A0912107BD2833D2BBFF7B3DE6772DB740FA0FF091316AFD6F0B8DE9E366E088') 'Stable 1.0 release hash changed'
 $parseTokens = $null; $parseErrors = $null
 $packageAst = [Management.Automation.Language.Parser]::ParseFile((Join-Path $project 'scripts\Package.ps1'), [ref]$parseTokens, [ref]$parseErrors)
 Check ($parseErrors.Count -eq 0) 'Package script has syntax errors'
 $versionDefault = @($packageAst.ParamBlock.Parameters | Where-Object { $_.Name.VariablePath.UserPath -eq 'Version' })[0].DefaultValue.SafeGetValue()
-Check ($versionDefault -eq '1.4.0') 'Package default version is not 1.4.0'
+Check ($versionDefault -eq '1.4.1') 'Package default version is not 1.4.1'
 $packageText = [IO.File]::ReadAllText((Join-Path $project 'scripts\Package.ps1'))
-Check ($packageText.Contains($oldZipHash) -and $packageText.Contains("Add-Payload 'rollback/BestOffer-1.3.1.zip'")) 'Package does not bundle the pinned 1.3.1 rollback archive'
+Check ($packageText.Contains($oldZipHash) -and $packageText.Contains("Add-Payload 'rollback/BestOffer-1.4.0.zip'")) 'Package does not bundle the pinned 1.4.0 rollback archive'
 $install = Join-Path $project 'scripts\Install.ps1'
 $uninstall = Join-Path $project 'scripts\Uninstall.ps1'
 $rollback = Join-Path $project 'scripts\Rollback.ps1'
@@ -102,22 +78,22 @@ Write-Text (Join-Path $game 'UserData\BestOffer-settings.json') '{"settings":"pr
 Write-Text (Join-Path $game 'Mods\OtherMod.dll') 'OTHER MOD STAYS UNCHANGED'
 $sourceDll = Join-Path $fixture 'new-source\BestOffer.dll'
 $sourcePdb = Join-Path $fixture 'new-source\BestOffer.pdb'
-Write-Text $sourceDll '1.4 DUMMY DLL - TEST ONLY'
-Write-Text $sourcePdb '1.4 DUMMY PDB - TEST ONLY'
+Write-Text $sourceDll '1.4.1 DUMMY DLL - TEST ONLY'
+Write-Text $sourcePdb '1.4.1 DUMMY PDB - TEST ONLY'
 $newHash = Hash $sourceDll; $newPdbHash = Hash $sourcePdb
 $mod = Join-Path $game 'Mods\BestOffer.dll'; $pdb = Join-Path $game 'Mods\BestOffer.pdb'
 $manifestPath = Join-Path $game 'UserData\BestOfferInstaller\install-manifest.json'
 $loaderSource = Join-Path $project 'tools\melonloader\v0.7.3'
 $installArgs = @('-GameDir',$game,'-ModSource',$sourceDll,'-LoaderSource',$loaderSource)
-Run-Script '01-install-1.4-dummy-with-pdb' $install $installArgs
+Run-Script '01-install-1.4.1-dummy-with-pdb' $install $installArgs
 Check ((Hash $pdb) -eq $newPdbHash) 'Installer did not deploy current PDB'
 $loaderHash = Hash (Join-Path $game 'version.dll')
-Run-Script '02-default-rollback-to-1.3.1' $rollback @('-GameDir',$game)
-Check ((Hash $mod) -eq $oldDllHash) 'Rollback DLL is not stable 1.3.1'
-Check ((Hash $pdb) -eq $oldPdbHash) 'Rollback PDB is not stable 1.3.1'
+Run-Script '02-default-rollback-to-1.4.0' $rollback @('-GameDir',$game)
+Check ((Hash $mod) -eq $oldDllHash) 'Rollback DLL is not stable 1.4.0'
+Check ((Hash $pdb) -eq $oldPdbHash) 'Rollback PDB is not stable 1.4.0'
 $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 Check ($manifest.Mod.Sha256 -eq $oldDllHash -and $manifest.Pdb.Sha256 -eq (Hash $pdb)) 'Rollback manifest not updated'
-Check ($manifest.ModVersion -eq '1.3.1' -and $manifest.RollbackArchiveSha256 -eq $oldZipHash) 'Default rollback manifest version/hash is not stable 1.3.1'
+Check ($manifest.ModVersion -eq '1.4.0' -and $manifest.RollbackArchiveSha256 -eq $oldZipHash) 'Default rollback manifest version/hash is not stable 1.4.0'
 $backup = @(Get-ChildItem -LiteralPath (Join-Path $game 'UserData\BestOfferInstaller\Backups') -Directory | Where-Object Name -like 'rollback-*') | Select-Object -Last 1
 Check ((Hash (Join-Path $backup.FullName 'BestOffer.dll')) -eq $newHash) 'Rollback did not preserve prior DLL'
 Check ((Hash (Join-Path $backup.FullName 'BestOffer.pdb')) -eq $newPdbHash) 'Rollback did not preserve prior PDB'
@@ -133,7 +109,7 @@ Write-Text $pdb 'TAMPERED PDB'
 Run-Script '06-current-pdb-hash-protection' $rollback @('-GameDir',$game) $false
 Check ([IO.File]::ReadAllText($pdb) -eq 'TAMPERED PDB') 'Tampered PDB was overwritten'
 Copy-Item -LiteralPath $sourcePdb -Destination $pdb -Force
-$badZip = Join-Path $fixture 'tampered\BestOffer-1.3.1.zip'
+$badZip = Join-Path $fixture 'tampered\BestOffer-1.4.0.zip'
 [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($badZip)) | Out-Null
 Copy-Item -LiteralPath $oldZip -Destination $badZip
 [IO.File]::AppendAllText($badZip,'TAMPERED ZIP')
@@ -163,29 +139,40 @@ $portableRoot = Join-Path $fixture 'portable'
 [IO.Directory]::CreateDirectory((Join-Path $portableRoot 'scripts')) | Out-Null
 [IO.Directory]::CreateDirectory((Join-Path $portableRoot 'rollback')) | Out-Null
 Copy-Item -LiteralPath $rollback -Destination (Join-Path $portableRoot 'scripts\Rollback.ps1')
-Copy-Item -LiteralPath $oldZip -Destination (Join-Path $portableRoot 'rollback\BestOffer-1.3.1.zip')
+Copy-Item -LiteralPath $oldZip -Destination (Join-Path $portableRoot 'rollback\BestOffer-1.4.0.zip')
 Run-Script '13-portable-bundled-rollback' (Join-Path $portableRoot 'scripts\Rollback.ps1') @('-GameDir',$game)
 Check ((Hash $mod) -eq $oldDllHash) 'Portable rollback missing stable DLL'
 Run-Script '14-upgrade-from-portable-rollback' $install $installArgs
 $dllOnly = Join-Path $fixture 'dll-only-source\BestOffer.dll'
-Write-Text $dllOnly '1.4 DLL ONLY - TEST ONLY'
+Write-Text $dllOnly '1.4.1 DLL ONLY - TEST ONLY'
 Run-Script '15-dll-only-upgrade-removes-stale-pdb' $install @('-GameDir',$game,'-ModSource',$dllOnly,'-LoaderSource',$loaderSource)
 Check (!(Test-Path -LiteralPath $pdb)) 'DLL-only upgrade retained stale PDB'
 Run-Script '16-rollback-after-dll-only-upgrade' $rollback @('-GameDir',$game)
-Run-Script '16b-explicit-rollback-to-1.0' $rollback @('-GameDir',$game,'-ReleaseZip',$v100Zip)
-Check ((Hash $mod) -eq '7A17B64A366892BDF9772F21461B54968C1EDB515644B400AF910AF6CA6102AF') 'Explicit 1.0 rollback failed'
+$unknownZip = Join-Path $fixture 'explicitly-trusted.zip'
+Make-CustomZip $unknownZip $false $false
+Run-Script '16b-unknown-zip-requires-trusted-sha' $rollback @('-GameDir',$game,'-ReleaseZip',$unknownZip) $false
+Check ((Hash $mod) -eq $oldDllHash) 'Unknown ZIP without a trusted SHA changed DLL'
+Run-Script '16c-unknown-zip-wrong-trusted-sha' $rollback @('-GameDir',$game,'-ReleaseZip',$unknownZip,'-ExpectedSha256',('F' * 64)) $false
+Check ((Hash $mod) -eq $oldDllHash) 'Unknown ZIP with an incorrect trusted SHA changed DLL'
+Run-Script '16d-explicit-trusted-zip' $rollback @('-GameDir',$game,'-ReleaseZip',$unknownZip,'-ExpectedSha256',(Hash $unknownZip))
+Check ([IO.File]::ReadAllText($mod) -eq 'OLD DLL' -and [IO.File]::ReadAllText($pdb) -eq 'OLD PDB') 'Explicit trusted ZIP payload was not deployed'
 $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
-Check ($manifest.ModVersion -eq '1.0.0') 'Explicit 1.0 manifest version incorrect'
-Run-Script '16c-upgrade-after-explicit-1.0' $install $installArgs
-Check ((Hash $mod) -eq $newHash -and (Hash $pdb) -eq $newPdbHash) 'Upgrade from explicit 1.0 failed'
-Run-Script '16d-return-to-default-1.3.1' $rollback @('-GameDir',$game)
-Check ((Hash $mod) -eq $oldDllHash) 'Default stopped selecting 1.3.1 after explicit 1.0'
-Run-Script '16e-explicit-rollback-to-1.1' $rollback @('-GameDir',$game,'-ReleaseZip',$v110Zip)
-Check ((Hash $mod) -eq '7006AC1B77DB8F8544AB392C7DED24FF6D96277FFFAC87B2965549F8B35E005B') 'Explicit 1.1 rollback failed'
-$manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
-Check ($manifest.ModVersion -eq '1.1.0') 'Explicit 1.1 manifest version incorrect'
-Run-Script '16f-return-to-default-after-1.1' $rollback @('-GameDir',$game)
-Check ((Hash $mod) -eq $oldDllHash -and (Hash $pdb) -eq $oldPdbHash) 'Default stopped selecting 1.3.1 after explicit 1.1'
+Check ($manifest.ModVersion -eq 'specified-release' -and $manifest.RollbackArchiveSha256 -eq (Hash $unknownZip)) 'Explicit trusted ZIP manifest was not tracked accurately'
+Run-Script '16e-return-to-default-1.4.0' $rollback @('-GameDir',$game)
+Check ((Hash $mod) -eq $oldDllHash -and (Hash $pdb) -eq $oldPdbHash) 'Default did not return to 1.4.0 after a trusted custom ZIP'
+Run-Script '16f-re-upgrade-after-custom-rollback' $install $installArgs
+Check ((Hash $mod) -eq $newHash -and (Hash $pdb) -eq $newPdbHash) 'Re-upgrade after a custom rollback failed'
+$disabledMod = Join-Path $game 'Mods\Disabled\BestOffer.dll'
+[IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($disabledMod)) | Out-Null
+Move-Item -LiteralPath $mod -Destination $disabledMod
+Run-Script '16g-disabled-mod-stays-disabled' $rollback @('-GameDir',$game)
+Check (!(Test-Path -LiteralPath $mod) -and (Hash $disabledMod) -eq $oldDllHash) 'Rollback re-enabled a disabled mod'
+Copy-Item -LiteralPath $sourceDll -Destination $mod
+Run-Script '16h-duplicate-enabled-disabled-rejected' $rollback @('-GameDir',$game) $false
+Check ((Hash $mod) -eq $newHash -and (Hash $disabledMod) -eq $oldDllHash) 'Duplicate enabled/disabled guard modified files'
+[IO.File]::Delete($mod)
+Move-Item -LiteralPath $disabledMod -Destination $mod
+Run-Script '16i-re-enabled-default-already-current' $rollback @('-GameDir',$game)
 Run-Script '17-uninstall-after-rollback' $uninstall @('-GameDir',$game)
 Check (!(Test-Path -LiteralPath $mod) -and !(Test-Path -LiteralPath $pdb)) 'Uninstall did not remove managed DLL/PDB'
 Check ((Hash (Join-Path $game 'version.dll')) -eq $loaderHash) 'Rollback changed loader'
@@ -194,8 +181,8 @@ Check ([IO.File]::ReadAllText((Join-Path $game 'UserData\BestOffer-rules.json'))
 Check ([IO.File]::ReadAllText((Join-Path $game 'UserData\BestOffer-settings.json')) -eq '{"settings":"preserve"}') 'Settings changed'
 Check ([IO.File]::ReadAllText((Join-Path $game 'Mods\OtherMod.dll')) -eq 'OTHER MOD STAYS UNCHANGED') 'Other mod changed'
 Check ((Hash $oldZip) -eq $oldZipHash) 'Stable release ZIP changed'
-Check ((Hash $v110Zip) -eq $v110ZipHash) 'Stable 1.1 ZIP changed'
-Check ((Hash $v100Zip) -eq $v100ZipHash) 'Stable 1.0 ZIP changed'
+
+
 
 # Use a harmless sleeping .NET Framework executable in a separate fixture to
 # exercise the exact process-name/path guard without touching the real game.
@@ -218,6 +205,6 @@ try {
     $sleeper.Dispose()
 }
 
-$report = [ordered]@{Date=[DateTimeOffset]::Now.ToString('o');RealGameModified=$false;Fixture=$fixture;Assertions=$checks;DefaultTarget='1.3.1';OldZipSha256=$oldZipHash;OldDllSha256=$oldDllHash;OldPdbSha256=$oldPdbHash;V110ZipSha256=$v110ZipHash;V100ZipSha256=$v100ZipHash;Tests=@($results.ToArray())}
-Write-Text (Join-Path $PSScriptRoot 'rollback-test-results-1.4.0.json') ($report | ConvertTo-Json -Depth 7)
+$report = [ordered]@{Date=[DateTimeOffset]::Now.ToString('o');RealGameModified=$false;Fixture=$fixture;Assertions=$checks;DefaultTarget='1.4.0';OldZipSha256=$oldZipHash;OldDllSha256=$oldDllHash;OldPdbSha256=$oldPdbHash;Tests=@($results.ToArray())}
+Write-Text (Join-Path $PSScriptRoot 'rollback-test-results-1.4.1.json') ($report | ConvertTo-Json -Depth 7)
 Write-Host "PASS: $($results.Count) scenarios, $checks assertions; fixture retained at $fixture"

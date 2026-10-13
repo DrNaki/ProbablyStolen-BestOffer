@@ -14,8 +14,8 @@ public sealed partial class BestOfferMod
     {
         ManagerIntegration.DetachLegacyCategory("BestOffer");
         LocalModDetails.Register("最佳报价 / Best Offer", "最佳报价", "Best Offer",
-            "点击最佳报价按钮或按面板快捷键（默认 F8），直接设置货源范围、清货上限、必卖禁卖与交易方案。配置自动保存。入口位于原生交易 iPad 内；管理器负责启用/禁用。",
-            "Open Best Offer (default F8) to configure quote sources, clearance limits, item rules and trade plans. Settings save automatically. Open it from the native trade tablet. Use the manager to enable or disable the mod.");
+            "点击交易 iPad 的齿轮「报价配置」或按 F8，设置库存规则、分类禁卖、报价方案与交易选项。违禁品和赃物可分别允许需求例外；等待买家时也可提前配置。设置自动保存。管理器负责启用/禁用。",
+            "Open Quote Configuration on the trade tablet (default F8) to configure inventory rules, category restrictions, trade plans and options. Contraband and stolen goods have separate explicit-demand exceptions. Configure rules before a buyer arrives. Settings save automatically. Use the manager to enable or disable the mod.");
     }
     void RefreshManagerVisibility()
     {
