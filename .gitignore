@@ -1,0 +1,20 @@
+# Generated output, local backups and game data
+/analysis/
+/backups/
+/dist/
+/release/
+**/bin/
+**/obj/
+*.es3
+*.log
+*.zip
+*.user
+/tests/*-smoke-*/
+/tests/manager-installer-*/
+/tests/*results*.json
+/tests/package-verification*.json
+/tools/il2cppdumper/
+/tools/melonloader/v0.7.3/
+/docs/2026-10-08_*
+/docs/*.png
+/docs/*.jpg
