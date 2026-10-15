@@ -7,6 +7,8 @@ using DeepSpaceModSupport;
 using Il2CppTMPro;
 using UnityEngine;
 using UnityEngine.Events;
+using UnityEngine.EventSystems;
+using UIEventTrigger = UnityEngine.EventSystems.EventTrigger;
 using UnityEngine.UI;
 
 namespace DeepSpaceBestOffer;
@@ -21,6 +23,9 @@ public sealed partial class BestOfferMod
     TextMeshProUGUI? nativeStatus, launcherNotice;
     Button? quickButton;
     string uiSignature = "", expandedGroup = "";
+    string inventoryParentKey = "";
+    sealed record InventoryNavigation(string ParentKey, string Group, int ListPage, int DetailPage);
+    readonly Stack<InventoryNavigation> inventoryNavigation = new();
     bool uiDirty = true;
     int uiTab, groupDetailPage;
     int nativeUiRebuildHeldThroughFrame = -1;
@@ -71,7 +76,7 @@ public sealed partial class BestOfferMod
         if (!IsOpen) { if (blocker != null) blocker.SetActive(false); return; }
         EnsureNativePanel();
         string signature = System.Text.Json.JsonSerializer.Serialize(new { revision, status, busy, selected, filter,
-            itemPage, planPage, detailPage, showConfirm, uiTab, expandedGroup, groupDetailPage, captureHotkey,
+            itemPage, planPage, detailPage, showConfirm, uiTab, expandedGroup, inventoryParentKey, groupDetailPage, captureHotkey,
             planCount = plans.Count, items = snapshot?.Items.Count });
         if ((uiDirty || signature != uiSignature) && Time.frameCount > nativeUiRebuildHeldThroughFrame)
         { uiDirty = false; uiSignature = signature; RebuildNativePage(); }
@@ -103,6 +108,7 @@ public sealed partial class BestOfferMod
         launcherNotice = nativeStatus = null; quickButton = null;
         blocker = nativeLaunchers = nativePage = null; nativeFont = null; nativeTabletSprite = nativeButtonSprite = null;
         uiSignature = ""; uiDirty = true;
+        ResetInventoryNavigation();
     }
 
     void RebuildNativePage()
@@ -138,21 +144,33 @@ public sealed partial class BestOfferMod
         else BuildSettingsPage(root);
         MakeBox(root, 48, 639, 1024, 1, Line);
         nativeStatus = MakeText(root, 48, 650, 806, 46, status, 13, Ink);
-        MakeText(root, 874, 663, 198, 22, "Esc 返回交易  ·  1.4.1", 12, Muted, TextAlignmentOptions.Right);
+        MakeText(root, 874, 663, 198, 22, "Esc 返回交易  ·  1.4.3", 12, Muted, TextAlignmentOptions.Right);
         blocker.SetActive(IsOpen);
     }
 
     void BuildInventoryPage(Transform root)
     {
         if (snapshot == null) return;
+        var package = inventoryParentKey.Length == 0 ? null : snapshot.Items.FirstOrDefault(i => i.Key == inventoryParentKey);
+        if (inventoryParentKey.Length > 0 && package == null) { ResetInventoryNavigation(); uiDirty = true; return; }
         if (expandedGroup.Length > 0) { BuildGroupDetail(root); return; }
-        MakeText(root, 48, 188, 690, 26, "同名商品一起设置，数量默认全部。需要区分时可查看单件。", 14, Ink);
-        string[] filters = { "全部", "可卖", "必卖", "禁卖" };
-        for (int f = 0; f < filters.Length; f++)
-        { int v = f; MakeButton(root, 48 + f * 85, 225, 77, 28, filters[f], () => { filter = v; itemPage = 0; uiDirty = true; }, filter == f ? Rust : Muted); }
-        MakeButton(root, 406, 225, 124, 28, "清除手动规则", ClearCurrentRules, Muted);
-        MakeButton(root, 838, 218, 234, 37, busy ? "正在计算……" : "计算最佳报价 →", () => { uiTab = 2; Calculate(); }, Green, !busy && snapshot.CanTrade);
-        var groups = GroupInventoryRows(snapshot.Items, filter);
+        if (package == null)
+        {
+            MakeText(root, 48, 188, 690, 26, "同名商品一起设置，数量默认全部。包装内的单片规则可在单件中配置。", 14, Ink);
+            string[] filters = { "全部", "可卖", "必卖", "禁卖" };
+            for (int f = 0; f < filters.Length; f++)
+            { int v = f; MakeButton(root, 48 + f * 85, 225, 77, 28, filters[f], () => { filter = v; itemPage = 0; uiDirty = true; }, filter == f ? Rust : Muted); }
+            MakeButton(root, 406, 225, 124, 28, "清除手动规则", ClearCurrentRules, Muted);
+            MakeButton(root, 838, 218, 234, 37, busy ? "正在计算……" : "计算最佳报价 →", () => { uiTab = 2; Calculate(); }, Green, !busy && snapshot.CanTrade);
+        }
+        else
+        {
+            MakeButton(root, 48, 188, 140, 30, "← 包装单件", ReturnFromPackage, Muted);
+            MakeText(root, 205, 188, 867, 30, $"{package.Name}  /  {RetailQuantityLabel(package)}  /  内容规则", 18, Ink);
+            MakeText(root, 48, 226, 1024, 35,
+                "禁卖任意内容会保护整件包装；内容必卖在整件模式下要求整盒／整瓶。\n开启拆售后，按包内单片规则选货；同名数量与单片设置共用。", 13, Muted);
+        }
+        var groups = GroupInventoryRows(snapshot.Items, package == null ? filter : 0, inventoryParentKey);
         int pages = Math.Max(1, (groups.Count + GroupRows - 1) / GroupRows);
         itemPage = Math.Clamp(itemPage, 0, pages - 1);
         for (int row = 0; row < GroupRows && itemPage * GroupRows + row < groups.Count; row++)
@@ -163,7 +181,9 @@ public sealed partial class BestOfferMod
             MakeText(root, 49, y, 322, 27, $"{group.Name}  ×{group.Count}", 18, group.EligibleCount > 0 ? Ink : Muted);
             string price = group.Items.Any(i => !i.PriceKnown) ? "待报价" :
                 group.MinPrice == group.MaxPrice ? $"单件 {group.MinPrice}" : $"报价 {group.MinPrice}–{group.MaxPrice}";
-            MakeText(root, 49, y + 29, 322, 24, $"{price}  ·  必卖 {req} / 禁卖 {ban}" +
+            string quantityNote = group.Items.All(i => i.IsRetailPackage) ? $"  ·  内含 {group.Items.Sum(i => (long)i.ContainedUnits)} 片" :
+                package != null && group.Items.Any(i => i.UnitCount > 1) ? $"  ·  共 {group.Items.Sum(i => (long)Math.Max(1, i.UnitCount))} 片" : "";
+            MakeText(root, 49, y + 29, 322, 24, $"{price}  ·  必卖 {req} / 禁卖 {ban}" + quantityNote +
                 (group.Items.Any(i => i.RiskBlocked) ? $"  ·  自动禁卖 {group.Items.Count(i => i.RiskBlocked)}" :
                 group.EligibleCount == 0 && group.Items.All(i => i.PriceKnown) ? "  ·  暂不可卖" : ""), 12, Muted);
             int count = CurrentGroupQuantityFromUI(group);
@@ -180,7 +200,8 @@ public sealed partial class BestOfferMod
         if (groups.Count == 0) MakeText(root, 48, 295, 1024, 100, snapshot.CanTrade ? "此分类没有商品。" :
             snapshot.Items.Count > 0 ? "此分类没有商品，可切换「全部」提前设置库存规则。" : snapshot.Message, 18, Muted);
         MakeButton(root, 48, 597, 96, 28, "← 上一页", () => { itemPage--; uiDirty = true; }, Muted, itemPage > 0);
-        MakeText(root, 158, 601, 720, 24, $"{itemPage + 1} / {pages} 页  ·  {groups.Count} 种商品 / {snapshot.Items.Count} 件", 13, Muted);
+        MakeText(root, 158, 601, 720, 24, $"{itemPage + 1} / {pages} 页  ·  {groups.Count} 种商品 / {groups.Sum(g => g.Count)} 件" +
+            (package == null ? "" : "  ·  包内规则独立保存"), 13, Muted);
         MakeButton(root, 976, 597, 96, 28, "下一页 →", () => { itemPage++; uiDirty = true; }, Muted, itemPage < pages - 1);
     }
 
@@ -203,7 +224,7 @@ public sealed partial class BestOfferMod
             () => { allowStolenDemandExceptions = !allowStolenDemandExceptions; OptionsChanged(); });
         MakeBox(root, 48, 546, 1024, 1, Line);
         MakeText(root, 48, 568, 1024, 56,
-            "需求例外只解除对应类别的自动禁卖；手动禁卖与买家原生拒收仍然有效。\n必卖物品受保护时，请先调整相应规则，再计算报价。", 14, Muted);
+            "需求例外只解除对应类别的自动禁卖；明确拒收违禁品的买家也不摆售赃物。\n手动禁卖与买家拒收始终有效；必卖受保护时，请先调整规则再报价。", 14, Muted);
     }
 
     void BuildCategoryRuleRow(Transform root, float y, string category, string description, bool blocked,
@@ -220,7 +241,7 @@ public sealed partial class BestOfferMod
     int CurrentGroupQuantityFromUI(InventoryRuleGroup group)
     {
         int req = GroupOwnRuleCount(group, 1), ban = GroupOwnRuleCount(group, 2);
-        return groupQuantities.TryGetValue(group.Name, out var q) ? Math.Clamp(q, 1, group.Count) :
+        return groupQuantities.TryGetValue(GroupStateKey(group), out var q) ? Math.Clamp(q, 1, group.Count) :
             ban > 0 && req == 0 ? ban : req > 0 && ban == 0 ? req : group.Count;
     }
 
@@ -231,38 +252,71 @@ public sealed partial class BestOfferMod
         int target = Math.Min(quantity, GroupAvailableRuleCount(group, rule));
         bool clear = ownCount > 0 && ownCount == target;
         SetGroupRule(group, rule, clear ? 0 : quantity);
-        if (GroupOwnRuleCount(group, rule) > 0) groupModes[group.Name] = rule;
-        else groupModes.Remove(group.Name);
+        if (GroupOwnRuleCount(group, rule) > 0) groupModes[GroupStateKey(group)] = rule;
+        else groupModes.Remove(GroupStateKey(group));
         uiDirty = true;
     }
 
     void ChangeGroupQuantity(InventoryRuleGroup group, int quantity)
     {
-        quantity = Math.Clamp(quantity, 1, group.Count); groupQuantities[group.Name] = quantity;
+        quantity = Math.Clamp(quantity, 1, group.Count); groupQuantities[GroupStateKey(group)] = quantity;
         int req = GroupOwnRuleCount(group, 1), ban = GroupOwnRuleCount(group, 2);
-        int mode = groupModes.TryGetValue(group.Name, out var m) && m is 1 or 2 && GroupOwnRuleCount(group, m) > 0 ? m :
+        int mode = groupModes.TryGetValue(GroupStateKey(group), out var m) && m is 1 or 2 && GroupOwnRuleCount(group, m) > 0 ? m :
             ban > 0 && req == 0 ? 2 : req > 0 && ban == 0 ? 1 : 0;
-        if (mode != 0) { groupModes[group.Name] = mode; SetGroupRule(group, mode, quantity); }
-        else groupModes.Remove(group.Name);
+        if (mode != 0) { groupModes[GroupStateKey(group)] = mode; SetGroupRule(group, mode, quantity); }
+        else groupModes.Remove(GroupStateKey(group));
         uiDirty = true;
     }
 
+    void ResetInventoryNavigation()
+    {
+        inventoryParentKey = expandedGroup = "";
+        inventoryNavigation.Clear(); groupDetailPage = 0;
+    }
+
+    void OpenPackageContents(TradeItem package)
+    {
+        inventoryNavigation.Push(new InventoryNavigation(inventoryParentKey, expandedGroup, itemPage, groupDetailPage));
+        inventoryParentKey = package.Key; expandedGroup = ""; itemPage = groupDetailPage = 0; uiDirty = true;
+    }
+
+    void ReturnFromPackage()
+    {
+        if (inventoryNavigation.Count == 0) ResetInventoryNavigation();
+        else
+        {
+            var previous = inventoryNavigation.Pop();
+            inventoryParentKey = previous.ParentKey; expandedGroup = previous.Group;
+            itemPage = previous.ListPage; groupDetailPage = previous.DetailPage;
+        }
+        uiDirty = true;
+    }
+
+    static string RetailQuantityLabel(TradeItem item) => item.IsRetailPackage ?
+        item.ContainedUnits > 0 ? $"内含 {item.ContainedUnits} 片" : "空包装" :
+        item.ParentKey.Length > 0 && item.UnitCount > 1 ? $"本件 {item.UnitCount} 片" : "";
+
     void BuildGroupDetail(Transform root)
     {
-        var group = GroupInventoryRows(snapshot!.Items).FirstOrDefault(g => g.Name == expandedGroup);
+        var group = GroupInventoryRows(snapshot!.Items, 0, inventoryParentKey).FirstOrDefault(g => g.Name == expandedGroup);
         if (group == null) { expandedGroup = ""; uiDirty = true; return; }
-        MakeButton(root, 48, 188, 110, 30, "← 同名商品", () => { expandedGroup = ""; uiDirty = true; }, Muted);
-        MakeText(root, 177, 188, 870, 32, $"{group.Name}  /  {group.Count} 件  /  单独设置", 18, Ink);
+        MakeButton(root, 48, 188, 140, 30, inventoryParentKey.Length == 0 ? "← 同名商品" : "← 包内同名", () => { expandedGroup = ""; uiDirty = true; }, Muted);
+        MakeText(root, 205, 188, 867, 32, $"{group.Name}  /  {group.Count} 件  /  单独设置", 18, Ink);
         int pages = Math.Max(1, (group.Count + 5) / 6); groupDetailPage = Math.Clamp(groupDetailPage, 0, pages - 1);
         for (int n = 0; n < 6 && groupDetailPage * 6 + n < group.Count; n++)
         {
             var item = group.Items[groupDetailPage * 6 + n]; float y = 235 + n * 57;
             string price = item.PriceKnown ? $"{item.Price} 信用点" : "待报价";
-            MakeText(root, 48, y, 716, 25, $"第 {groupDetailPage * 6 + n + 1} 件  ·  {price}  ·  {item.Source}", 15, item.Eligible ? Ink : Muted);
-            MakeText(root, 48, y + 25, 716, 25, (item.Eligible ? ItemFeatureSummary(item) : item.Reason) + RuleNote(item), 12, Muted);
+            bool hasPackageContents = item.IsRetailPackage && snapshot.Items.Any(i => i.ParentKey == item.Key);
+            float textWidth = item.IsRetailPackage ? 567 : 716;
+            MakeText(root, 48, y, textWidth, 25, $"第 {groupDetailPage * 6 + n + 1} 件  ·  {price}  ·  {item.Source}", 15, item.Eligible || item.RuleOnly ? Ink : Muted);
+            string quantity = RetailQuantityLabel(item);
+            MakeText(root, 48, y + 25, textWidth, 25, (quantity.Length == 0 ? "" : quantity + "  ·  ") +
+                (item.Eligible ? ItemFeatureSummary(item) : item.RuleOnly ? "仅设置包装内容规则" : item.Reason) + RuleNote(item), 12, Muted);
+            if (item.IsRetailPackage) MakeButton(root, 632, y + 5, 144, 32, "内容规则 →", () => OpenPackageContents(item), Muted, !busy && hasPackageContents);
             int r = OwnRule(item.Key);
-            MakeButton(root, 792, y + 5, 128, 32, r == 1 ? "必卖 ✓" : "必卖", () => { SetRule(item, r == 1 ? 0 : 1); groupModes.Remove(group.Name); groupQuantities.Remove(group.Name); uiDirty = true; }, r == 1 ? Green : Muted, !busy);
-            MakeButton(root, 936, y + 5, 136, 32, r == 2 ? "禁卖 ✓" : "禁卖", () => { SetRule(item, r == 2 ? 0 : 2); groupModes.Remove(group.Name); groupQuantities.Remove(group.Name); uiDirty = true; }, r == 2 ? Rust : Muted, !busy);
+            MakeButton(root, 792, y + 5, 128, 32, r == 1 ? "必卖 ✓" : "必卖", () => { SetRule(item, r == 1 ? 0 : 1); groupModes.Remove(GroupStateKey(group)); groupQuantities.Remove(GroupStateKey(group)); uiDirty = true; }, r == 1 ? Green : Muted, !busy);
+            MakeButton(root, 936, y + 5, 136, 32, r == 2 ? "禁卖 ✓" : "禁卖", () => { SetRule(item, r == 2 ? 0 : 2); groupModes.Remove(GroupStateKey(group)); groupQuantities.Remove(GroupStateKey(group)); uiDirty = true; }, r == 2 ? Rust : Muted, !busy);
             MakeBox(root, 48, y + 53, 1024, 1, Line);
         }
         MakeButton(root, 48, 597, 96, 28, "← 上一页", () => { groupDetailPage--; uiDirty = true; }, Muted, groupDetailPage > 0);
@@ -309,7 +363,9 @@ public sealed partial class BestOfferMod
         MakeText(root, 172, 520, 174, 24, $"{planPage + 1} / {pages} 组", 13, Muted, TextAlignmentOptions.Center);
         MakeButton(root, 372, 516, 96, 28, "下一组 →", () => { planPage++; uiDirty = true; }, Muted, planPage < pages - 1);
         var chosen = plans[selected]; var keys = chosen.Items.Select(i => i.Key).ToHashSet();
-        var items = snapshot.Items.Where(i => keys.Contains(i.Key)).GroupBy(i => i.Name).Select(g => $"{g.Key}  ×{g.Count()}     {g.Sum(i => i.Price)}").ToArray();
+        var items = snapshot.Items.Where(i => keys.Contains(i.Key)).GroupBy(i => new { i.Name, i.IsRetailPackage, IsContent = i.ParentKey.Length > 0 })
+            .Select(g => $"{g.Key.Name}  ×{g.Count()}" + (g.Key.IsRetailPackage ? $"（内含 {g.Sum(i => (long)i.ContainedUnits)} 片）" :
+                g.Key.IsContent ? $"（共 {g.Sum(i => (long)Math.Max(1, i.UnitCount))} 片）" : "") + $"     {g.Sum(i => i.Price)}").ToArray();
         MakeText(root, 504, 241, 568, 32, $"预计实收 {Receipts(chosen, snapshot):N0} 信用点", 23, Green);
         MakeText(root, 504, 278, 568, 26, $"名义报价 {chosen.TotalPrice}  ·  放弃收取 {Uncollected(chosen, snapshot)}", 14, Muted);
         MakeBox(root, 504, 318, 568, 1, Line);
@@ -334,28 +390,63 @@ public sealed partial class BestOfferMod
 
     void BuildSettingsPage(Transform root)
     {
-        MakeText(root, 48, 189, 1024, 28, "设置自动保存，下次打开继续使用。", 14, Muted);
-        MakeText(root, 48, 240, 340, 32, "报价货源", 21, Rust);
-        MakeText(root, 48, 278, 330, 70, "库存与交易台始终参与。\n其他货源按需加入。", 14, Ink);
-        MakeButton(root, 404, 240, 206, 38, (includeShowcase ? "✓ " : "") + "展示柜", () => { includeShowcase = !includeShowcase; OptionsChanged(); }, includeShowcase ? Green : Muted);
-        MakeButton(root, 628, 240, 206, 38, (includeHiddenStorage ? "✓ " : "") + "隐藏仓库", () => { includeHiddenStorage = !includeHiddenStorage; OptionsChanged(); }, includeHiddenStorage ? Green : Muted);
-        MakeButton(root, 852, 240, 220, 38, (includeContainerContents ? "✓ " : "") + "储藏箱内容", () => { includeContainerContents = !includeContainerContents; OptionsChanged(); }, includeContainerContents ? Green : Muted);
-        MakeText(root, 404, 292, 668, 55, includeContainerContents ? "保留展开的箱体，可独立取出的内容物单独报价。" : "箱体连同内容物整体报价；内容物禁卖会保护整个箱子。", 14, Ink);
-        MakeBox(root, 48, 354, 1024, 1, Line);
-        MakeText(root, 48, 380, 340, 32, "超预算清货", 21, Rust);
-        MakeText(root, 48, 420, 330, 88, "超出的金额不收取。\n实际卖出前会再次确认。", 14, Ink);
-        MakeButton(root, 404, 380, 210, 38, allowOverBudget ? "✓ 允许超预算" : "允许超预算", () => { allowOverBudget = !allowOverBudget; OptionsChanged(); }, allowOverBudget ? Rust : Muted);
-        MakeButton(root, 632, 380, 206, 38, overBudgetPercent ? "✓ 百分比 %" : "百分比 %", () => { overBudgetPercent = true; OptionsChanged(); }, overBudgetPercent ? Green : Muted, allowOverBudget);
-        MakeButton(root, 856, 380, 216, 38, !overBudgetPercent ? "✓ 固定信用点" : "固定信用点", () => { overBudgetPercent = false; OptionsChanged(); }, !overBudgetPercent ? Green : Muted, allowOverBudget);
-        MakeText(root, 404, 438, 108, 30, "超出上限", 15, Ink);
-        MakeNumberField(root, 526, 432, 184, 38);
-        MakeText(root, 731, 438, 340, 32, overBudgetPercent ? "%  /  以剩余预算计算" : "信用点", 14, Muted);
-        MakeText(root, 404, 484, 668, 35, "保留商品请在「库存规则」按同名数量设置禁卖。", 14, Ink);
-        MakeBox(root, 48, 536, 1024, 1, Line);
-        MakeText(root, 48, 558, 340, 32, "快捷键", 21, Rust);
-        MakeButton(root, 404, 558, 310, 40, captureHotkey == 1 ? "按功能键，Esc 取消" : "打开面板  /  " + panelHotkey, () => { captureHotkey = 1; uiDirty = true; }, Muted);
-        MakeButton(root, 732, 558, 340, 40, captureHotkey == 2 ? "按功能键，Esc 取消" : "只读诊断  /  " + auditHotkey, () => { captureHotkey = 2; uiDirty = true; }, Muted);
-        MakeText(root, 404, 605, 668, 20, "支持 Ctrl / Alt / Shift + 功能键；请避免与其他模组重复。", 12, Muted);
+        const float left = 48, right = 584, column = 488, cell = 235;
+        MakeText(root, left, 188, 1024, 28, "设置自动保存。库存与交易台始终参与，其他货源按需加入。", 14, Muted);
+        MakeText(root, left, 227, column, 30, "报价货源", 21, Rust);
+        MakeText(root, left + 175, 230, column - 175, 24, "悬停「机器」「产物」查看说明", 12, Muted, TextAlignmentOptions.Right);
+        MakeText(root, right, 227, column, 30, "当天行情", 21, Rust);
+        MakeBox(root, 560, 227, 1, 210, Line).GetComponent<Image>().raycastTarget = false;
+        MakeButton(root, left, 263, cell, 38, (includeShowcase ? "✓ " : "") + "展示柜", () => { includeShowcase = !includeShowcase; OptionsChanged(); }, includeShowcase ? Green : Muted, !busy);
+        MakeButton(root, left + 253, 263, cell, 38, (includeHiddenStorage ? "✓ " : "") + "隐藏仓库", () => { includeHiddenStorage = !includeHiddenStorage; OptionsChanged(); }, includeHiddenStorage ? Green : Muted, !busy);
+        MakeButton(root, left, 307, cell, 38, (includeContainerContents ? "✓ " : "") + "储藏箱内容", () => { includeContainerContents = !includeContainerContents; OptionsChanged(); }, includeContainerContents ? Green : Muted, !busy);
+        var machine = MakeButton(root, left + 253, 307, cell, 38, (includeMachineContents ? "✓ " : "") + "机器", () => { includeMachineContents = !includeMachineContents; OptionsChanged(); }, includeMachineContents ? Green : Muted, !busy);
+        var products = MakeButton(root, left, 351, cell, 38, (includeMachineProducts ? "✓ " : "") + "产物", () => { includeMachineProducts = !includeMachineProducts; OptionsChanged(); }, includeMachineProducts ? Green : Muted, !busy);
+        MakeButton(root, left + 253, 351, cell, 38, (splitRetailPackages ? "✓ " : "") + "允许拆售包装耗材", () => { splitRetailPackages = !splitRetailPackages; OptionsChanged(); }, splitRetailPackages ? Green : Muted, !busy);
+        MakeText(root, left, 399, column, 44,
+            (includeContainerContents ? "储藏箱内容单独报价，保留展开的箱体。" : "储藏箱整体报价；内容禁卖会保护整箱。") + "\n" +
+            (splitRetailPackages ? "包装耗材按单片选货，可在包装下设置规则。" : "包装耗材默认整盒／整瓶出售。"), 13, Ink);
+        MakeButton(root, right, 263, column, 38, (blockMarketDiscounts ? "✓ " : "") + "不出售打折商品", () => { blockMarketDiscounts = !blockMarketDiscounts; OptionsChanged(); }, blockMarketDiscounts ? Rust : Muted, !busy);
+        MakeButton(root, right, 307, column, 38, (preferMarketMarkups ? "✓ " : "") + "优先出售加价商品", () => { preferMarketMarkups = !preferMarketMarkups; OptionsChanged(); }, preferMarketMarkups ? Green : Muted, !busy);
+        MakeText(root, right, 354, column, 22, snapshot?.MarketDay > 0 ? $"第 {snapshot.MarketDay} 天  ·  日历事件" : "日历事件", 13, Rust);
+        MakeText(root, right, 379, column, 38, string.IsNullOrEmpty(snapshot?.MarketSummary) ? "当天没有影响商品价格的事件。" : snapshot!.MarketSummary, 13, Ink);
+        MakeText(root, right, 421, column, 20, preferMarketMarkups ? "加价商品先选，剩余预算继续选择其他商品。" : "开启优先后，加价商品先选，其他商品补足预算。", 12, Muted);
+        MakeBox(root, left, 454, 1024, 1, Line);
+        MakeText(root, left, 471, 168, 30, "超预算清货", 21, Rust);
+        MakeButton(root, 234, 466, 198, 38, allowOverBudget ? "✓ 允许超预算" : "允许超预算", () => { allowOverBudget = !allowOverBudget; OptionsChanged(); }, allowOverBudget ? Rust : Muted, !busy);
+        MakeButton(root, 449, 466, 162, 38, overBudgetPercent ? "✓ 百分比 %" : "百分比 %", () => { overBudgetPercent = true; OptionsChanged(); }, overBudgetPercent ? Green : Muted, !busy && allowOverBudget);
+        MakeButton(root, 625, 466, 192, 38, !overBudgetPercent ? "✓ 固定信用点" : "固定信用点", () => { overBudgetPercent = false; OptionsChanged(); }, !overBudgetPercent ? Green : Muted, !busy && allowOverBudget);
+        MakeText(root, 835, 473, 58, 28, "上限", 14, Ink);
+        MakeNumberField(root, 902, 466, 170, 38);
+        MakeText(root, left, 512, 733, 28, "超出的金额不收取，实际卖出前会再次确认。", 13, Ink);
+        MakeText(root, 798, 512, 274, 28, overBudgetPercent ? "%  /  以剩余预算计算" : "信用点", 13, Muted, TextAlignmentOptions.Right);
+        MakeBox(root, left, 551, 1024, 1, Line);
+        MakeText(root, left, 574, 168, 30, "快捷键", 21, Rust);
+        MakeButton(root, 234, 568, 396, 38, captureHotkey == 1 ? "按功能键，Esc 取消" : "打开面板  /  " + panelHotkey, () => { captureHotkey = 1; uiDirty = true; }, Muted, !busy);
+        MakeButton(root, 648, 568, 424, 38, captureHotkey == 2 ? "按功能键，Esc 取消" : "只读诊断  /  " + auditHotkey, () => { captureHotkey = 2; uiDirty = true; }, Muted, !busy);
+        MakeText(root, 234, 608, 838, 20, "支持 Ctrl / Alt / Shift + 功能键；请避免与其他模组重复。", 12, Muted);
+        AddSettingTooltip(machine, root, "允许取出机器内的电池、模块和原材料。\n关闭时仍可单独选择产物。", left, 394, column, 54);
+        AddSettingTooltip(products, root, "仅取出机器输出位置的成品。\n不取走电池、模块和原材料。", left, 394, column, 54);
+    }
+
+    void AddSettingTooltip(Button button, Transform root, string explanation, float x, float y, float width, float height)
+    {
+        // Keep the hover text in the description area beneath the source grid.
+        // Its entire graphic tree ignores raycasts, so controls stay reachable.
+        var tooltip = MakeBox(root, x, y, width, height, Line);
+        tooltip.GetComponent<Image>().raycastTarget = false;
+        var fill = MakeBox(tooltip.transform, 1, 1, width - 2, height - 2, new Color(.96f, .89f, .70f));
+        fill.GetComponent<Image>().raycastTarget = false;
+        MakeText(tooltip.transform, 10, 6, width - 20, height - 12, explanation, 14, Ink);
+        tooltip.SetActive(false);
+        var trigger = button.gameObject.AddComponent<UIEventTrigger>();
+        void Register(EventTriggerType eventType, bool visible)
+        {
+            var entry = new UIEventTrigger.Entry { eventID = eventType };
+            entry.callback.AddListener((UnityAction<BaseEventData>)(_ => { if (tooltip != null) tooltip.SetActive(visible); }));
+            trigger.triggers.Add(entry);
+        }
+        Register(EventTriggerType.PointerEnter, true);
+        Register(EventTriggerType.PointerExit, false);
     }
 
     void MakeNumberField(Transform parent, float x, float y, float w, float h)
@@ -365,7 +456,7 @@ public sealed partial class BestOfferMod
         var text = textObject.AddComponent<Text>(); text.font = Resources.GetBuiltinResource<Font>("Arial.ttf"); text.fontSize = 18; text.color = Ink; text.alignment = TextAnchor.MiddleCenter;
         text.supportRichText = false; text.raycastTarget = false;
         var input = go.AddComponent<InputField>(); input.textComponent = text; input.targetGraphic = go.GetComponent<Image>();
-        input.contentType = InputField.ContentType.DecimalNumber; input.characterLimit = 15; input.text = overBudgetInput; input.interactable = allowOverBudget;
+        input.contentType = InputField.ContentType.DecimalNumber; input.characterLimit = 15; input.text = overBudgetInput; input.interactable = !busy && allowOverBudget;
         input.onEndEdit.AddListener((UnityAction<string>)(value =>
         {
             if (value == overBudgetInput) return;

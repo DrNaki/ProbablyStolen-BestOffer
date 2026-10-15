@@ -11,15 +11,21 @@ public readonly record struct RiskItemFacts(bool IsContraband, bool IsStolen, bo
 
 /// <summary>
 /// Additional selection restrictions. A demand exception removes only this
-/// automatic restriction; native refusal and manual forbidden rules still apply.
+/// automatic restriction; the buyer's explicit refusal and manual bans still apply.
 /// No hidden ItemFeature values are needed to determine either risk category.
 /// </summary>
 public static class RiskPolicy
 {
     public static RiskCategory GetBlockedCategories(TradeOptions options,
-        bool isContraband, bool isStolen, bool hasExplicitDemand)
+        bool isContraband, bool isStolen, bool hasExplicitDemand, bool buyerRefusesRiskyGoods = false)
     {
         if (options == null) throw new ArgumentNullException(nameof(options));
+        // A buyer explicitly refusing contraband must never receive stolen or
+        // contraband goods through automation, even when a requested category
+        // matches or the optional automatic protections are switched off.
+        if (buyerRefusesRiskyGoods)
+            return (isContraband ? RiskCategory.Contraband : RiskCategory.None) |
+                (isStolen ? RiskCategory.Stolen : RiskCategory.None);
         var blocked = RiskCategory.None;
         if (options.BlockContraband && isContraband && !(options.AllowContrabandDemandExceptions && hasExplicitDemand))
             blocked |= RiskCategory.Contraband;
@@ -34,13 +40,14 @@ public static class RiskPolicy
     /// The caller must use a generic UI reason for an inaccessible component.
     /// </summary>
     public static RiskCategory GetBundleBlockedCategories(TradeOptions options,
-        IEnumerable<RiskItemFacts> components)
+        IEnumerable<RiskItemFacts> components, bool buyerRefusesRiskyGoods = false)
     {
         if (options == null) throw new ArgumentNullException(nameof(options));
         if (components == null) throw new ArgumentNullException(nameof(components));
         var blocked = RiskCategory.None;
         foreach (var item in components)
-            blocked |= GetBlockedCategories(options, item.IsContraband, item.IsStolen, item.HasExplicitDemand);
+            blocked |= GetBlockedCategories(options, item.IsContraband, item.IsStolen,
+                item.HasExplicitDemand, buyerRefusesRiskyGoods);
         return blocked;
     }
 

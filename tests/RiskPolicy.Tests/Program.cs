@@ -6,7 +6,7 @@ void Check(bool condition, string message)
 { assertions++; if (!condition) throw new Exception(message); }
 
 // All combinations of user protections, public risk labels and explicit demand.
-for (int mask = 0; mask < 128; mask++)
+for (int mask = 0; mask < 256; mask++)
 {
     var options = new TradeOptions
     {
@@ -16,12 +16,13 @@ for (int mask = 0; mask < 128; mask++)
         AllowStolenDemandExceptions = (mask & 8) != 0
     };
     bool contraband = (mask & 16) != 0, stolen = (mask & 32) != 0, demand = (mask & 64) != 0;
-    var result = RiskPolicy.GetBlockedCategories(options, contraband, stolen, demand);
+    bool buyerRefuses = (mask & 128) != 0;
+    var result = RiskPolicy.GetBlockedCategories(options, contraband, stolen, demand, buyerRefuses);
     Check(result.HasFlag(RiskCategory.Contraband) ==
-        (options.BlockContraband && contraband && !(options.AllowContrabandDemandExceptions && demand)),
+        (contraband && (buyerRefuses || (options.BlockContraband && !(options.AllowContrabandDemandExceptions && demand)))),
         "Contraband protection or its demand exception was applied incorrectly.");
     Check(result.HasFlag(RiskCategory.Stolen) ==
-        (options.BlockStolen && stolen && !(options.AllowStolenDemandExceptions && demand)),
+        (stolen && (buyerRefuses || (options.BlockStolen && !(options.AllowStolenDemandExceptions && demand)))),
         "Stolen protection or its demand exception was applied incorrectly.");
 }
 
@@ -121,18 +122,42 @@ var manuallyProtectedBundle = OfferSolver.Solve(new[]
 Check(manuallyProtectedBundle.IsOptimal && manuallyProtectedBundle.Plans.All(p => p.Items.All(i => i.Key != "box")),
     "Manual forbidden descendants remain protected when automatic demand exceptions allow the bundle.");
 
+// A patrol officer's explicit refusal takes priority over food demand and
+// every optional protection setting. Legal requested goods remain available.
+var refusedStolen = RiskPolicy.GetBlockedCategories(protectedOptions, false, true, true, true);
+Check(refusedStolen == RiskCategory.Stolen,
+    "A buyer refusing contraband must not receive explicitly requested stolen food.");
+var policePlan = OfferSolver.Solve(new[]
+{
+    Make("stolen-cat-bar", 17, false, refusedStolen),
+    Make("legal-caffeine-pill", 12, false, RiskPolicy.GetBlockedCategories(protectedOptions, false, false, true, true))
+}, 75, false);
+Check(policePlan.IsOptimal && policePlan.Plans.All(p => p.Items.All(i => i.Key != "stolen-cat-bar")) &&
+    policePlan.Plans[0].Items.Single().Key == "legal-caffeine-pill",
+    "Refusal must exclude stolen food while keeping the officer's legal requested pill.");
+Check(RiskPolicy.GetBundleBlockedCategories(new TradeOptions(), new[]
+{
+    new RiskItemFacts(false, false, true), new RiskItemFacts(false, true, true)
+}, true) == RiskCategory.Stolen,
+    "Refusal must protect risky descendants even with both optional protections disabled.");
+Check(RiskPolicy.GetBundleBlockedCategories(protectedOptions,
+    bothRisks.Select(f => f with { HasExplicitDemand = true }), true) == (RiskCategory.Contraband | RiskCategory.Stolen),
+    "Container and component demand cannot override explicit buyer refusal.");
+Check(OfferSolver.Solve(new[] { Make("required-stolen-food", 17, false, refusedStolen, true) }, 75, false).Status == OfferSolveStatus.Infeasible,
+    "A required rule must not bypass explicit buyer refusal.");
+
 // Model native callbacks at the transaction boundaries with live public facts.
 // This verifies the policy against changed demand/content, rather than reusing
 // facts captured when the original offer was calculated. Native execution is
 // separately checked in the two permitted game saves.
 (int Moved, int Sold, string StoppedAt) SimulateTransaction(TradeOptions options,
     Func<RiskItemFacts[]>[] goods, Action<int>? afterPlacement = null,
-    Action<int>? beforeSale = null, Action<int>? afterSale = null)
+    Action<int>? beforeSale = null, Action<int>? afterSale = null, Func<bool>? buyerRefuses = null)
 {
     int moved = 0, sold = 0;
     for (int n = 0; n < goods.Length; n++)
     {
-        bool Blocked() => RiskPolicy.GetBundleBlockedCategories(options, goods[n]()) != RiskCategory.None;
+        bool Blocked() => RiskPolicy.GetBundleBlockedCategories(options, goods[n](), buyerRefuses?.Invoke() == true) != RiskCategory.None;
         if (Blocked()) return (moved, sold, "before-placement");
         moved++; afterPlacement?.Invoke(n);
         if (Blocked()) return (moved, sold, "after-placement");
@@ -191,6 +216,21 @@ var disabledProtection = SimulateTransaction(new TradeOptions(), drugPlan,
     afterPlacement: _ => changingTags.Clear());
 Check(disabledProtection == (2, 2, ""),
     "Transaction revalidation must preserve original behavior when both automatic protections are disabled.");
+bool liveRefusal = true;
+changingTags.Clear(); changingTags.Add("SUBSTANCE");
+var refusedBeforePlacement = SimulateTransaction(new TradeOptions(), drugPlan, buyerRefuses: () => liveRefusal);
+Check(refusedBeforePlacement == (0, 0, "before-placement"),
+    "Live refusal must stop a stale plan before moving any risky goods, including with protections off.");
+liveRefusal = false;
+var refusalDuringPlacement = SimulateTransaction(protectedOptions, drugPlan,
+    afterPlacement: _ => liveRefusal = true, buyerRefuses: () => liveRefusal);
+Check(refusalDuringPlacement == (1, 0, "after-placement"),
+    "A refusal introduced by native placement callbacks must stop before selling.");
+liveRefusal = false;
+var refusalBeforeSale = SimulateTransaction(protectedOptions, drugPlan,
+    beforeSale: _ => liveRefusal = true, buyerRefuses: () => liveRefusal);
+Check(refusalBeforeSale == (1, 0, "before-sale"),
+    "Refusal must be checked again immediately before sale.");
 
 const string legacyJson = "{\"IncludeShowcase\":false,\"IncludeHiddenStorage\":true,\"IncludeContainerContents\":true,\"AllowOverBudget\":true,\"OverBudgetMode\":1,\"OverBudgetValue\":10,\"PanelHotkey\":\"F8\",\"AuditHotkey\":\"F9\"}";
 var legacy = JsonSerializer.Deserialize<TradeOptions>(legacyJson)!;

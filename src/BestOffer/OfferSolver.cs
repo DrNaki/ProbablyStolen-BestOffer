@@ -12,6 +12,7 @@ public sealed class Candidate
     public long Price { get; set; }
     public bool Required { get; set; }
     public bool Forbidden { get; set; }
+    public bool Preferred { get; set; }
 }
 
 public enum OfferSolveStatus { Optimal, Infeasible, ResourceLimit, InvalidInput }
@@ -21,6 +22,7 @@ public sealed class OfferPlan
     public IReadOnlyList<Candidate> Items { get; }
     public long TotalPrice { get; }
     public int ItemCount => Items.Count;
+    public long PreferredPrice => Items.Where(i => i.Preferred).Sum(i => i.Price);
 
     internal OfferPlan(IEnumerable<Candidate> items, long totalPrice)
     {
@@ -71,8 +73,9 @@ public static class OfferSolver
         public readonly PathNode? Previous;
         public readonly Candidate? Item;
         public readonly int Count;
-        public PathNode(PathNode? previous, Candidate? item, int count)
-        { Previous = previous; Item = item; Count = count; }
+        public readonly long PreferredPrice;
+        public PathNode(PathNode? previous, Candidate? item, int count, long preferredPrice = 0)
+        { Previous = previous; Item = item; Count = count; PreferredPrice = preferredPrice; }
     }
 
     private sealed class ProductNode
@@ -102,7 +105,7 @@ public static class OfferSolver
 
     public static SolveResult Solve(IReadOnlyList<Candidate> candidates, long budget,
         bool requireVariety, int maxItems = int.MaxValue, int maxPlans = 12,
-        SolverLimits? limits = null, long? receiptCap = null)
+        SolverLimits? limits = null, long? receiptCap = null, bool prioritizePreferred = false)
     {
         if (candidates is null) return Invalid("物品列表不能为空。");
         if (budget < 0 || receiptCap < 0 || maxItems < 0 || maxPlans < 1 || maxPlans > 64)
@@ -155,6 +158,14 @@ public static class OfferSolver
                 groups[index].Add(item);
             }
         }
+
+        // A required preferred total is fixed for every solution. Once it
+        // reaches the receipt cap (or no optional preferred choices remain),
+        // use the ordinary fast paths instead of constructing redundant states.
+        if (prioritizePreferred && required.Where(i => i.Preferred).Sum(i => i.Price) < (receiptCap ?? budget) &&
+            groups.Any(group => group.Any(i => i.Preferred && i.Price > 0)))
+            return SolvePreferred(groups, required, requiredTotal, capacity, slots, maxPlans,
+                receiptCap ?? budget, work);
 
         // If the maximum choice from every independent group fits, all combinations fit.
         // Enumerate only the k best Cartesian-product points instead of all reachable sums.
@@ -298,6 +309,69 @@ public static class OfferSolver
             }
         }
         return Success(plans);
+    }
+
+    // Keeping only the highest preference at a price can discard a smaller
+    // prefix needed to satisfy a later max-items constraint. Count is therefore
+    // part of the state; the k best preferences at each (price, count) dominate
+    // every discarded path for every possible future suffix.
+    private static SolveResult SolvePreferred(List<List<Candidate>> groups, List<Candidate> required,
+        long requiredTotal, long capacity, int slots, int maxPlans, long receiptCap, ResourceBudget work)
+    {
+        long requiredPreferred = required.Where(i => i.Preferred).Sum(i => i.Price);
+        var root = new PathNode(null, null, 0, requiredPreferred);
+        var current = new Dictionary<(long Price, int Count), List<PathNode>> { [(0, 0)] = new() { root } };
+        foreach (var group in groups)
+        {
+            if (!work.InTime) return Limited();
+            var next = current.ToDictionary(e => e.Key, e => new List<PathNode>(e.Value));
+            int storedPaths = next.Values.Sum(v => v.Count);
+            foreach (var item in group)
+            foreach (var entry in current)
+            {
+                if (!work.TryTransition()) return Limited();
+                if (entry.Key.Count >= slots || item.Price > capacity - entry.Key.Price) continue;
+                var state = (Price: entry.Key.Price + item.Price, Count: entry.Key.Count + 1);
+                foreach (var previous in entry.Value)
+                {
+                    if (!work.TryTransition()) return Limited();
+                    long preferred = previous.PreferredPrice + (item.Preferred ? item.Price : 0);
+                    long score = Math.Min(preferred, receiptCap);
+                    if (!next.TryGetValue(state, out var bucket))
+                    {
+                        if (next.Count >= work.Limits.MaxStates) return Limited();
+                        next[state] = bucket = new List<PathNode>();
+                    }
+                    if (bucket.Count >= maxPlans && Math.Min(bucket[^1].PreferredPrice, receiptCap) >= score) continue;
+                    if (!work.TryCreate()) return Limited();
+                    if (bucket.Count < maxPlans && ++storedPaths > work.Limits.MaxStoredPaths) return Limited();
+                    int position = bucket.Count;
+                    while (position > 0 && Math.Min(bucket[position - 1].PreferredPrice, receiptCap) < score) position--;
+                    bucket.Insert(position, new PathNode(previous, item, state.Count, preferred));
+                    if (bucket.Count > maxPlans) bucket.RemoveAt(bucket.Count - 1);
+                }
+            }
+            current = next;
+        }
+        if (!work.InTime) return Limited();
+        var ranked = current.SelectMany(e => e.Value.Select(path => new { e.Key.Price, e.Key.Count, Path = path }))
+            .Where(e => e.Count + required.Count > 0)
+            .OrderByDescending(e => Math.Min(e.Path.PreferredPrice, receiptCap))
+            .ThenByDescending(e => Math.Min(requiredTotal + e.Price, receiptCap))
+            .ThenBy(e => Math.Max(0, requiredTotal + e.Price - receiptCap))
+            .ThenBy(e => e.Count + required.Count)
+            .Take(maxPlans);
+        var plans = new List<OfferPlan>();
+        foreach (var entry in ranked)
+        {
+            var items = new List<Candidate>(required);
+            for (var cursor = entry.Path; cursor.Item != null; cursor = cursor.Previous!) items.Add(cursor.Item);
+            plans.Add(new OfferPlan(items, requiredTotal + entry.Price));
+        }
+        if (!work.InTime) return Limited();
+        var result = Success(plans);
+        return result.IsOptimal ? new SolveResult(OfferSolveStatus.Optimal,
+            "已优先选择当天加价商品，再求最高实收及可用备选方案。", result.Plans) : result;
     }
 
     private static SolveResult Success(IEnumerable<OfferPlan> plans)

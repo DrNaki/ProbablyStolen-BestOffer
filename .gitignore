@@ -3,6 +3,7 @@
 /backups/
 /dist/
 /release/
+/nexus-release/
 **/bin/
 **/obj/
 *.es3

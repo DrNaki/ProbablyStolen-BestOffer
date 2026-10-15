@@ -10,12 +10,12 @@ void Check(bool condition, string message)
 Candidate C(string key, long price, string? group = null, bool required = false, bool forbidden = false)
     => new() { Key = key, Group = group ?? key, Price = price, Required = required, Forbidden = forbidden };
 
-void Oracle(Candidate[] items, long budget, bool variety, int maxItems, int maxPlans, long? receiptCap = null)
+void Oracle(Candidate[] items, long budget, bool variety, int maxItems, int maxPlans, long? receiptCap = null, bool prefer = false)
 {
-    var expected = new List<(long Price, int Count, string Keys)>();
+    var expected = new List<(long Price, int Count, string Keys, long Preferred)>();
     for (int mask = 0; mask < (1 << items.Length); mask++)
     {
-        long total = 0;
+        long total = 0, preferred = 0;
         int count = 0;
         bool valid = true;
         var groups = new HashSet<string>(StringComparer.Ordinal);
@@ -29,17 +29,21 @@ void Oracle(Candidate[] items, long budget, bool variety, int maxItems, int maxP
             if (item.Forbidden || (variety && !groups.Add(item.Group)) || item.Price > budget - total)
             { valid = false; break; }
             total += item.Price;
+            if (item.Preferred) preferred += item.Price;
             count++;
             keys.Add(item.Key);
         }
         if (valid && count > 0 && count <= maxItems)
-            expected.Add((total, count, string.Join("|", keys.OrderBy(x => x, StringComparer.Ordinal))));
+            expected.Add((total, count, string.Join("|", keys.OrderBy(x => x, StringComparer.Ordinal)), preferred));
     }
     expected = receiptCap.HasValue
         ? expected.OrderByDescending(x => Math.Min(x.Price, receiptCap.Value))
             .ThenBy(x => Math.Max(0, x.Price - receiptCap.Value)).ThenBy(x => x.Count).ToList()
         : expected.OrderByDescending(x => x.Price).ThenBy(x => x.Count).ToList();
-    var actual = OfferSolver.Solve(items, budget, variety, maxItems, maxPlans, receiptCap: receiptCap);
+    if (prefer) expected = expected.OrderByDescending(x => Math.Min(x.Preferred, receiptCap ?? budget))
+        .ThenByDescending(x => Math.Min(x.Price, receiptCap ?? budget))
+        .ThenBy(x => Math.Max(0, x.Price - (receiptCap ?? budget))).ThenBy(x => x.Count).ToList();
+    var actual = OfferSolver.Solve(items, budget, variety, maxItems, maxPlans, receiptCap: receiptCap, prioritizePreferred: prefer);
     Check(actual.Status == (expected.Count == 0 ? OfferSolveStatus.Infeasible : OfferSolveStatus.Optimal),
         $"Wrong status {actual.Status}, expected combinations {expected.Count}: {actual.Message}");
     Check(actual.Plans.Count == Math.Min(maxPlans, expected.Count), "Wrong number of plans");
@@ -51,6 +55,7 @@ void Oracle(Candidate[] items, long budget, bool variety, int maxItems, int maxP
         var key = string.Join("|", plan.Items.Select(x => x.Key).OrderBy(x => x, StringComparer.Ordinal));
         Check(plan.TotalPrice == expected[i].Price && plan.ItemCount == expected[i].Count,
             $"Wrong rank {i}: actual {plan.TotalPrice}/{plan.ItemCount}, expected {expected[i].Price}/{expected[i].Count}");
+        if (prefer) Check(Math.Min(plan.PreferredPrice, receiptCap ?? budget) == Math.Min(expected[i].Preferred, receiptCap ?? budget), "Preferred rank mismatch");
         Check(validKeys.Contains(key), "Infeasible selection returned");
         Check(actualKeys.Add(key), "Duplicate plan returned");
         Check(plan.Items.Sum(x => x.Price) == plan.TotalPrice, "Plan total mismatch");
@@ -99,6 +104,35 @@ for (int trial = 0; trial < 1200; trial++)
     long receipt = rng.Next(0, 100);
     Oracle(items, receipt + rng.Next(0, 70), rng.Next(2) == 0, rng.Next(0, length + 2), rng.Next(1, 20), receipt);
 }
+
+var preferredSmall = C("market-markup", 40); preferredSmall.Preferred = true;
+var filler = C("filler", 60);
+var preferredSelection = OfferSolver.Solve(new[] { preferredSmall, filler, C("ordinary", 100) }, 100, false, prioritizePreferred: true);
+Check(preferredSelection.Plans[0].Items.Select(i => i.Key).ToHashSet().SetEquals(new[] { "market-markup", "filler" }),
+    "Markup goods must take budget priority while ordinary goods can fill the remainder.");
+for (int trial = 0; trial < 1200; trial++)
+{
+    int length = rng.Next(0, 11);
+    var items = Enumerable.Range(0, length).Select(i =>
+    {
+        var item = C("market" + i, rng.Next(0, 24), "group" + rng.Next(0, Math.Max(1, length / 2)), rng.Next(14) == 0, rng.Next(11) == 0);
+        item.Preferred = rng.Next(2) == 0;
+        return item;
+    }).ToArray();
+    long receipt = rng.Next(0, 100);
+    Oracle(items, receipt + rng.Next(0, 50), rng.Next(2) == 0, rng.Next(0, length + 2), rng.Next(1, 15), receipt, true);
+}
+var preferredLimit = new SolverLimits { MaxTransitions = 1 };
+Check(OfferSolver.Solve(new[] { preferredSmall, filler }, 100, false, limits: preferredLimit, prioritizePreferred: true).Status == OfferSolveStatus.ResourceLimit,
+    "Market preference must never return an unproven result after the resource limit.");
+var requiredPreferred = C("required-markup", 1, required: true); requiredPreferred.Preferred = true;
+var fixedPreferenceStock = Enumerable.Range(1, 110).Select(i => C("ordinary-" + i, i)).Prepend(requiredPreferred).ToArray();
+var fixedPreference = OfferSolver.Solve(fixedPreferenceStock, 6106, false, prioritizePreferred: true);
+Check(fixedPreference.IsOptimal && fixedPreference.Plans[0].TotalPrice == 6106,
+    "A fixed required markup must not disable the fast all-stock-fits solver.");
+var defaults = System.Text.Json.JsonSerializer.Deserialize<TradeOptions>("{\"IncludeContainerContents\":true}")!;
+Check(!defaults.IncludeMachineContents && !defaults.IncludeMachineProducts && !defaults.SplitRetailPackages,
+    "Legacy configurations must protect machine contents and retain whole packages by default.");
 
 var options = new TradeOptions { AllowOverBudget = true, OverBudgetValue = 10 };
 Check(options.TryGetSelectionBudget(89, out var limit, out _) && limit == 97, "Percentage allowance must round down");
@@ -159,4 +193,4 @@ Check(capped.Status == OfferSolveStatus.ResourceLimit && capped.Plans.Count == 0
 Check(timer.ElapsedMilliseconds < 8_000, "Default exact search exceeded bounded runtime");
 Console.WriteLine($"250 hard long-price items / half-total budget: {capped.Status}, {timer.ElapsedMilliseconds} ms");
 
-Console.WriteLine($"PASS: {checks} assertions, 2400 randomized exhaustive-oracle cases.");
+Console.WriteLine($"PASS: {checks} assertions, 3600 randomized exhaustive-oracle cases.");

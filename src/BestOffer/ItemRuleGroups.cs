@@ -21,11 +21,11 @@ public sealed class InventoryRuleGroup
 
 public sealed partial class BestOfferMod
 {
-    List<InventoryRuleGroup> GroupInventoryRows(IEnumerable<TradeItem> inventory, int selectedFilter = 0)
+    List<InventoryRuleGroup> GroupInventoryRows(IEnumerable<TradeItem> inventory, int selectedFilter = 0, string parentKey = "")
     {
         // Filter whole groups, never their individual members. A forbidden-only
         // view must still permit changing ten forbidden copies down to three.
-        return ItemRuleGroupLogic.GroupByDisplayName(inventory, i => i.Key, i => i.Name)
+        return ItemRuleGroupLogic.GroupByDisplayName(inventory.Where(i => i.ParentKey == parentKey), i => i.Key, i => i.Name)
             .Select(g => new InventoryRuleGroup(g.Name, g.Items,
                 g.Items.Select(ItemDifferenceSignature).Distinct(StringComparer.Ordinal).Skip(1).Any()))
             .Where(g => selectedFilter == 0 || g.Items.Any(i =>
@@ -38,6 +38,11 @@ public sealed partial class BestOfferMod
         group.Count - GroupOwnRuleCount(group, rule == 1 ? 2 : 1);
     int GroupEffectiveRuleCount(InventoryRuleGroup group, int rule) => group.Items.Count(i => (Rule(i) & rule) != 0);
     int GroupConflictCount(InventoryRuleGroup group) => group.Items.Count(i => Rule(i) == 3);
+
+    // A quantity chosen inside one box belongs to that box, even when another
+    // package contains medicine with the same display name.
+    static string GroupStateKey(InventoryRuleGroup group) =>
+        (group.Items.FirstOrDefault()?.ParentKey ?? "") + "\u001f" + group.Name;
 
     void SetGroupRule(InventoryRuleGroup group, int rule, int count)
     {
@@ -56,7 +61,7 @@ public sealed partial class BestOfferMod
 
     static string ItemDifferenceSignature(TradeItem item)
     {
-        string data = $"{item.Group}\u001f{item.Price}\u001f{item.Eligible}\u001f{item.Reason}\u001f{item.DescendantKeys.Count}";
+        string data = $"{item.Group}\u001f{item.Price}\u001f{item.Eligible}\u001f{item.Reason}\u001f{item.DescendantKeys.Count}\u001f{item.UnitCount}\u001f{item.ContainedUnits}";
         // Native feature identities have unique parent IDs/pointers, which must
         // not make equivalent copies appear different. Compare actual feature
         // values instead. This is read-only and safely falls back to snapshot

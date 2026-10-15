@@ -11,7 +11,7 @@ using MelonLoader.Utils;
 using UnityEngine;
 using DeepSpaceModSupport;
 
-[assembly: MelonInfo(typeof(DeepSpaceBestOffer.BestOfferMod), "最佳报价 / Best Offer", "1.4.1", "Naki & Codex")]
+[assembly: MelonInfo(typeof(DeepSpaceBestOffer.BestOfferMod), "最佳报价 / Best Offer", "1.4.3", "Naki & Codex")]
 [assembly: MelonGame("Questing Goose Studio", "Probably Stolen")]
 
 namespace DeepSpaceBestOffer;
@@ -42,6 +42,8 @@ public sealed partial class BestOfferMod : MelonMod
     int suppressNativeInputThroughFrame = -1;
     bool suppressMouseUntilReleased;
     bool includeShowcase = true, includeHiddenStorage = true, includeContainerContents;
+    bool includeMachineContents, includeMachineProducts, splitRetailPackages;
+    bool blockMarketDiscounts, preferMarketMarkups;
     bool allowOverBudget, overBudgetPercent = true;
     bool blockContraband, blockStolen;
     bool allowContrabandDemandExceptions, allowStolenDemandExceptions;
@@ -70,6 +72,9 @@ public sealed partial class BestOfferMod : MelonMod
                     throw new InvalidDataException("报价选项无效，使用默认设置。");
                 includeShowcase = saved.IncludeShowcase; includeHiddenStorage = saved.IncludeHiddenStorage;
                 includeContainerContents = saved.IncludeContainerContents; allowOverBudget = saved.AllowOverBudget;
+                includeMachineContents = saved.IncludeMachineContents; includeMachineProducts = saved.IncludeMachineProducts;
+                splitRetailPackages = saved.SplitRetailPackages;
+                blockMarketDiscounts = saved.BlockMarketDiscounts; preferMarketMarkups = saved.PreferMarketMarkups;
                 blockContraband = saved.BlockContraband; blockStolen = saved.BlockStolen;
                 allowContrabandDemandExceptions = saved.AllowContrabandDemandExceptions;
                 allowStolenDemandExceptions = saved.AllowStolenDemandExceptions;
@@ -95,7 +100,7 @@ public sealed partial class BestOfferMod : MelonMod
             prefix: new HarmonyMethod(typeof(BestOfferMod), nameof(ResolveNativeEscape)));
         HarmonyInstance.Patch(AccessTools.Method(typeof(EscapeUIManager), "OpenEscapeMenu"),
             prefix: new HarmonyMethod(typeof(BestOfferMod), nameof(AllowGameInput)));
-        LoggerInstance.Msg($"最佳报价 v1.4.1 已载入；{panelHotkey} 打开报价配置，可提前设置库存规则与自动禁卖保护。");
+        LoggerInstance.Msg($"最佳报价 v1.4.3 已载入；{panelHotkey} 打开报价配置，可设置当天行情、货源与禁卖保护。");
     }
 
     static bool AllowGameInput() => Current?.ShouldBlockNativeInput() != true;
@@ -120,6 +125,9 @@ public sealed partial class BestOfferMod : MelonMod
         {
             IncludeShowcase = includeShowcase, IncludeHiddenStorage = includeHiddenStorage,
             IncludeContainerContents = includeContainerContents, AllowOverBudget = allowOverBudget,
+            IncludeMachineContents = includeMachineContents, IncludeMachineProducts = includeMachineProducts,
+            SplitRetailPackages = splitRetailPackages, BlockMarketDiscounts = blockMarketDiscounts,
+            PreferMarketMarkups = preferMarketMarkups,
             BlockContraband = blockContraband, BlockStolen = blockStolen,
             AllowContrabandDemandExceptions = allowContrabandDemandExceptions,
             AllowStolenDemandExceptions = allowStolenDemandExceptions,
@@ -132,6 +140,7 @@ public sealed partial class BestOfferMod : MelonMod
     static long Receipts(OfferPlan plan, TradeSnapshot quote) => Math.Min(plan.TotalPrice, quote.Budget);
     static long Uncollected(OfferPlan plan, TradeSnapshot quote) => Math.Max(0, plan.TotalPrice - Receipts(plan, quote));
     bool IsBestPlan(OfferPlan plan) => snapshot != null && plans.Count > 0 &&
+        (!snapshot.Options.PreferMarketMarkups || Math.Min(plan.PreferredPrice, snapshot.Budget) == Math.Min(plans[0].PreferredPrice, snapshot.Budget)) &&
         Receipts(plan, snapshot) == Receipts(plans[0], snapshot) && Uncollected(plan, snapshot) == Uncollected(plans[0], snapshot);
 
     void OptionsChanged()
@@ -239,7 +248,7 @@ public sealed partial class BestOfferMod : MelonMod
                     var result = work.Work.Result;
                     plans = result.Plans.ToList(); selected = 0; planPage = 0;
                     status = plans.Count > 0
-                        ? $"最高实收 {Receipts(plans[0], snapshot!)} · 名义报价 {plans[0].TotalPrice} · 不收取 {Uncollected(plans[0], snapshot!)} · {plans.Count} 个方案"
+                        ? (snapshot!.Options.PreferMarketMarkups ? "加价优先 · 实收 " : "最高实收 ") + $"{Receipts(plans[0], snapshot!)} · 名义报价 {plans[0].TotalPrice} · 不收取 {Uncollected(plans[0], snapshot!)} · {plans.Count} 个方案"
                         : (result.Status == OfferSolveStatus.ResourceLimit ? "搜索未完成：" : "没有可行方案：") + result.Message;
                     LoggerInstance.Msg(status);
                     WriteDiagnostics();
@@ -289,7 +298,7 @@ public sealed partial class BestOfferMod : MelonMod
         CancelQuick();
         SuppressTransitionInput();
         snapshot = adapter.Capture(CurrentOptions()); IsOpen = true;
-        groupQuantities.Clear(); groupModes.Clear(); expandedGroup = ""; uiDirty = true;
+        groupQuantities.Clear(); groupModes.Clear(); expandedGroup = ""; ResetInventoryNavigation(); uiDirty = true;
         revision++; plans.Clear(); showConfirm = false; itemPage = 0; captureHotkey = 0;
         status = Time.unscaledTime < quickNoticeUntil && quickNoticeClientKey == snapshot.ClientKey && !string.IsNullOrEmpty(quickNoticeDetail)
             ? quickNoticeDetail : snapshot.CanTrade ? "选择货源并设置必卖 / 禁卖，再计算最高实收方案。" : snapshot.Message;
@@ -380,13 +389,15 @@ public sealed partial class BestOfferMod : MelonMod
         var includedKeys = snapshot.Items.SelectMany(i => i.DescendantKeys.Append(i.Key)).ToHashSet(StringComparer.Ordinal);
         var requiredOutsideScope = rules.Where(p => p.Value == 1 && !includedKeys.Contains(p.Key))
             .Select(p => p.Key).ToHashSet(StringComparer.Ordinal);
-        if (requiredOutsideScope.Count > 0 && (!includeShowcase || !includeHiddenStorage))
+        if (requiredOutsideScope.Count > 0 && (!includeShowcase || !includeHiddenStorage || !includeContainerContents ||
+            !includeMachineContents || !includeMachineProducts || !splitRetailPackages))
         {
             // Check only when explicitly calculating. Old rules for sold objects
             // or another run are harmless, but an owned required object must not
             // disappear merely because its storage source was unchecked.
             var allSources = CurrentOptions();
             allSources.IncludeShowcase = true; allSources.IncludeHiddenStorage = true;
+            allSources.IncludeContainerContents = allSources.IncludeMachineContents = allSources.IncludeMachineProducts = allSources.SplitRetailPackages = true;
             var fullScope = adapter.Capture(allSources);
             if (!fullScope.CanTrade) { status = "无法确认必卖物品范围：" + fullScope.Message; return; }
             var excludedRequired = fullScope.Items.Where(i => requiredOutsideScope.Contains(i.Key) ||
@@ -398,21 +409,23 @@ public sealed partial class BestOfferMod : MelonMod
                 return;
             }
         }
-        var conflicts = snapshot.Items.Where(i => Rule(i) == 3).ToList();
+        var conflicts = snapshot.Items.Where(i => !i.RuleOnly && Rule(i) == 3).ToList();
         if (conflicts.Count > 0)
         {
             status = "必卖/禁卖规则冲突：" + string.Join("；", conflicts.Select(i => i.Name)) + "。请调整容器或内容物规则，或点击清除规则。";
             return;
         }
-        var rejected = snapshot.Items.Where(i => Rule(i) == 1 && !i.Eligible).ToList();
+        var rejected = snapshot.Items.Where(i => !i.RuleOnly && Rule(i) == 1 && !i.Eligible).ToList();
         if (rejected.Count > 0) { status = "必卖条件无法满足：" + string.Join("；", rejected.Select(i => i.Name + "（" + i.Reason + "）")); return; }
         var candidates = snapshot.Items.Where(i => i.Eligible).OrderBy(i => i.Key, StringComparer.Ordinal).Select(i => new Candidate
-        { Key = i.Key, Group = i.Group, Price = i.Price, Required = Rule(i) == 1, Forbidden = Rule(i) == 2 }).ToArray();
+        { Key = i.Key, Group = i.Group, Price = i.Price, Required = Rule(i) == 1, Forbidden = Rule(i) == 2,
+            Preferred = i.MarketMarkedUp }).ToArray();
         long budget = snapshot.SelectionBudget, receiptCap = snapshot.Budget;
-        bool variety = snapshot.RequireVariety; int max = snapshot.MaxItems;
+        bool variety = snapshot.RequireVariety, prefer = snapshot.Options.PreferMarketMarkups; int max = snapshot.MaxItems;
         status = quickApply ? "正在计算并摆货……按 Esc 可取消。" : "正在精确计算……";
         pending = new PendingCalculation(
-            Task.Run(() => OfferSolver.Solve(candidates, budget, variety, max, quickApply ? 1 : 12, receiptCap: receiptCap)),
+            Task.Run(() => OfferSolver.Solve(candidates, budget, variety, max, quickApply ? 1 : 12, receiptCap: receiptCap,
+                prioritizePreferred: prefer)),
             revision, quickApply, snapshot, GameTradeAdapter.SnapshotSignature(snapshot));
     }
     void WriteDiagnostics()
@@ -422,7 +435,10 @@ public sealed partial class BestOfferMod : MelonMod
             File.WriteAllText(Path.Combine(MelonEnvironment.UserDataDirectory, "BestOffer-last-quote.json"), System.Text.Json.JsonSerializer.Serialize(new
             {
                 snapshot!.ClientKey, snapshot.ClientName, snapshot.Budget, snapshot.SelectionBudget, snapshot.Options, snapshot.RequireVariety, snapshot.MaxItems,
-                items = snapshot.Items.Select(i => new { i.Key, i.Group, i.Name, i.Price, i.Source, i.Eligible, i.Reason, i.DescendantKeys, rule = Rule(i), ownRule = OwnRule(i.Key) }),
+                snapshot.MarketDay, snapshot.MarketSummary, snapshot.MarketSignature,
+                items = snapshot.Items.Select(i => new { i.Key, i.Group, i.Name, i.Price, i.Source, i.Eligible, i.Reason,
+                    i.ParentKey, i.RuleOnly, i.IsRetailPackage, i.UnitCount, i.ContainedUnits, i.MarketDiscounted, i.MarketMarkedUp,
+                    i.DescendantKeys, rule = Rule(i), ownRule = OwnRule(i.Key) }),
                 plans = plans.Select(p => new { p.TotalPrice, receipts = Receipts(p, snapshot), uncollected = Uncollected(p, snapshot), keys = p.Items.Select(i => i.Key) })
             }, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
         }

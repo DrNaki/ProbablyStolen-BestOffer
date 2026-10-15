@@ -10,6 +10,11 @@ public sealed class TradeOptions
     public bool IncludeShowcase { get; set; } = true;
     public bool IncludeHiddenStorage { get; set; } = true;
     public bool IncludeContainerContents { get; set; }
+    public bool IncludeMachineContents { get; set; }
+    public bool IncludeMachineProducts { get; set; }
+    public bool SplitRetailPackages { get; set; }
+    public bool BlockMarketDiscounts { get; set; }
+    public bool PreferMarketMarkups { get; set; }
     // Opt-in defaults preserve behavior when loading settings from 1.4.0.
     public bool BlockContraband { get; set; }
     public bool BlockStolen { get; set; }

@@ -1,7 +1,7 @@
 ﻿[CmdletBinding()]
 param(
     [string]$GameDir = 'E:\Steam\steamapps\common\Probably Stolen Demo',
-    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '1.4.1'
+    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '1.4.3'
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -112,6 +112,9 @@ Add-Payload 'tests/ItemRuleGroups.Tests/ItemRuleGroups.Tests.csproj'
 Add-Payload 'tests/ItemRuleGroups.Tests/Program.cs'
 Add-Payload 'tests/RiskPolicy.Tests/RiskPolicy.Tests.csproj'
 Add-Payload 'tests/RiskPolicy.Tests/Program.cs'
+Add-Payload 'tests/InventorySourcePolicy.Tests/InventorySourcePolicy.Tests.csproj'
+Add-Payload 'tests/InventorySourcePolicy.Tests/Program.cs'
+Add-Payload 'tests/InventorySourcePolicy.Tests/NativeFixtures.cs'
 foreach ($name in @('Build', 'Install', 'Uninstall', 'Package', 'Rollback')) { Add-Payload ('scripts/' + $name + '.ps1') }
 Add-Payload 'rollback/BestOffer-1.4.0.zip' $rollbackSourceRelative
 foreach ($source in @(Get-ChildItem -LiteralPath (Join-Path $projectDir 'src\BestOffer') -File)) {
