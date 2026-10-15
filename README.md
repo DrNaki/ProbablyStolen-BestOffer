@@ -6,9 +6,11 @@
 
 ## 实机演示
 
-默认配置：点击交易 iPad 的“一键摆货”，核对原生报价，再手动点击“接受报价”完成交易。录制仅加载 Best Offer 1.4.3 与 Mod Manager 1.2.5，没有启用其他模组。
+点击交易 iPad 的“一键摆货”，核对原生报价后手动成交。下方 GIF 来自作者重新录制的视频，保留完整画面与原速。
 
-![默认配置下的一键摆货与手动成交](media/v1.4.3/one-click-trade.gif)
+![一键摆货与手动成交实机演示](media/v1.4.3/one-click-trade.gif)
+
+下方 UI 截图拍摄时仅加载 Best Offer 1.4.3 与 Mod Manager 1.2.5，使用默认模组配置。
 
 ![交易设置：货源、当天行情、包装拆售与预算](media/v1.4.3/05-trade-settings.png)
 
