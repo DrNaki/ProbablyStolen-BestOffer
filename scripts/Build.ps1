@@ -28,6 +28,9 @@ if (!$SkipTests) {
     Write-Host '正在验证机器货源、产物槽与整件包装保护……'
     & dotnet run --project (Join-Path $projectDir 'tests\InventorySourcePolicy.Tests\InventorySourcePolicy.Tests.csproj') --configuration $Configuration
     if ($LASTEXITCODE -ne 0) { throw "货源策略测试失败，退出码 $LASTEXITCODE。" }
+    Write-Host '正在验证分类规则优先级、有效期与跨存档隔离……'
+    & dotnet run --project (Join-Path $projectDir 'tests\CategoryRules.Tests\CategoryRules.Tests.csproj') --configuration $Configuration
+    if ($LASTEXITCODE -ne 0) { throw "分类规则测试失败，退出码 $LASTEXITCODE。" }
 }
 Write-Host '正在构建最佳报价 Mod……'
 $buildArguments = @('build', (Join-Path $projectDir 'src\BestOffer\BestOffer.csproj'), '--configuration', $Configuration, '--nologo', "-p:GameDir=$gameRoot")

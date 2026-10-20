@@ -17,6 +17,8 @@ public static class NativeInventorySourcePolicy
 
     public static InventoryContainerKind GetContainerKind(GameItem item)
     {
+        // Toolbox slots hold frequently used equipment and share the machine opt-in.
+        if (item.identifier == "toolbox") return InventoryContainerKind.Machine;
         // The native factories for the fixed bottle/box printers omit MACHINE
         // even though they create dedicated battery and production inventories.
         if (item.IsGameItemType("MACHINE") || item.IsTag("STANDARD_MACHINE_TAG") ||
@@ -69,6 +71,22 @@ public static class NativeInventorySourcePolicy
             return "物品不在可访问库存中";
         }
         catch (Exception) { return "无法可靠读取物品货源层级"; }
+    }
+
+    public static bool ProtectsToolboxContents(IEnumerable<GameItem> contents, bool includeMachineContents)
+    {
+        if (includeMachineContents) return false;
+        foreach (var item in contents)
+        {
+            var current = item;
+            var seen = new HashSet<IntPtr> { item.Pointer };
+            while (current.parentInventory?.GetParentItem() is { } owner && seen.Add(owner.Pointer))
+            {
+                if (owner.identifier == "toolbox") return true;
+                current = owner;
+            }
+        }
+        return false;
     }
 
     private static bool IsOutputInventory(GameItem machine, GameInventory inventory)

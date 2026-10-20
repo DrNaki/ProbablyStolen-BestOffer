@@ -11,7 +11,7 @@ using MelonLoader.Utils;
 using UnityEngine;
 using DeepSpaceModSupport;
 
-[assembly: MelonInfo(typeof(DeepSpaceBestOffer.BestOfferMod), "最佳报价 / Best Offer", "1.4.3", "Naki & Codex")]
+[assembly: MelonInfo(typeof(DeepSpaceBestOffer.BestOfferMod), "最佳报价 / Best Offer", "1.5.0", "Naki & Codex")]
 [assembly: MelonGame("Questing Goose Studio", "Probably Stolen")]
 
 namespace DeepSpaceBestOffer;
@@ -23,6 +23,7 @@ public sealed partial class BestOfferMod : MelonMod
     TradeSnapshot? snapshot;
     readonly GameTradeAdapter adapter = new();
     readonly Dictionary<string, int> rules = new();
+    readonly Dictionary<string, int> allGroupRules = new(StringComparer.Ordinal);
     List<OfferPlan> plans = new();
     int selected, itemPage, planPage, revision, filter, detailPage;
     string status = "点击「计算最佳报价」开始。";
@@ -37,6 +38,7 @@ public sealed partial class BestOfferMod : MelonMod
     string quickNoticeDetail = "", quickNoticeClientKey = "";
     float quickNoticeUntil;
     string rulePath = "";
+    string allGroupRulePath = "";
     string settingsPath = "";
     float refreshAt;
     int suppressNativeInputThroughFrame = -1;
@@ -55,6 +57,7 @@ public sealed partial class BestOfferMod : MelonMod
     {
         Current = this;
         rulePath = Path.Combine(MelonEnvironment.UserDataDirectory, "BestOffer-rules.json");
+        allGroupRulePath = Path.Combine(MelonEnvironment.UserDataDirectory, "BestOffer-all-rules.json");
         settingsPath = Path.Combine(MelonEnvironment.UserDataDirectory, "BestOffer-settings.json");
         try
         {
@@ -63,6 +66,13 @@ public sealed partial class BestOfferMod : MelonMod
                     if (p.Value is 1 or 2) rules[p.Key] = p.Value;
         }
         catch (Exception e) { LoggerInstance.Warning("读取偏好失败: " + e.Message); }
+        try
+        {
+            if (File.Exists(allGroupRulePath))
+                foreach (var p in System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, int>>(File.ReadAllText(allGroupRulePath)) ?? new())
+                    if (p.Value is 0 or 1 or 2 && p.Key.Contains('\u001f')) allGroupRules[p.Key] = p.Value;
+        }
+        catch (Exception e) { LoggerInstance.Warning("读取全部库存规则失败: " + e.Message); }
         try
         {
             if (File.Exists(settingsPath))
@@ -88,6 +98,7 @@ public sealed partial class BestOfferMod : MelonMod
             }
         }
         catch (Exception e) { LoggerInstance.Warning("读取报价选项失败: " + e.Message); }
+        InitializeCategoryRules();
         InitializeLocalSettings();
         HarmonyInstance.Patch(AccessTools.Method(typeof(InputActionManager), "Update"),
             prefix: new HarmonyMethod(typeof(BestOfferMod), nameof(AllowGameInput)));
@@ -100,7 +111,7 @@ public sealed partial class BestOfferMod : MelonMod
             prefix: new HarmonyMethod(typeof(BestOfferMod), nameof(ResolveNativeEscape)));
         HarmonyInstance.Patch(AccessTools.Method(typeof(EscapeUIManager), "OpenEscapeMenu"),
             prefix: new HarmonyMethod(typeof(BestOfferMod), nameof(AllowGameInput)));
-        LoggerInstance.Msg($"最佳报价 v1.4.3 已载入；{panelHotkey} 打开报价配置，可设置当天行情、货源与禁卖保护。");
+        LoggerInstance.Msg($"最佳报价 v1.5.0 已载入；{panelHotkey} 打开报价配置，可设置当天行情、货源与禁卖保护。");
     }
 
     static bool AllowGameInput() => Current?.ShouldBlockNativeInput() != true;
@@ -121,6 +132,8 @@ public sealed partial class BestOfferMod : MelonMod
     {
         if (TryOverBudgetNumber(out decimal limit)) lastValidOverBudgetValue = limit;
         else limit = lastValidOverBudgetValue;
+        var categoryChoices = CurrentCategorySelections();
+        bool hasCategoryScope = CurrentCategoryScope() != null;
         return new TradeOptions
         {
             IncludeShowcase = includeShowcase, IncludeHiddenStorage = includeHiddenStorage,
@@ -128,12 +141,14 @@ public sealed partial class BestOfferMod : MelonMod
             IncludeMachineContents = includeMachineContents, IncludeMachineProducts = includeMachineProducts,
             SplitRetailPackages = splitRetailPackages, BlockMarketDiscounts = blockMarketDiscounts,
             PreferMarketMarkups = preferMarketMarkups,
-            BlockContraband = blockContraband, BlockStolen = blockStolen,
+            // Risk category choices now share the same precedence and expiry
+            // as ordinary categories. Buyer refusal remains a native hard limit.
+            BlockContraband = !hasCategoryScope && blockContraband, BlockStolen = !hasCategoryScope && blockStolen,
             AllowContrabandDemandExceptions = allowContrabandDemandExceptions,
             AllowStolenDemandExceptions = allowStolenDemandExceptions,
             OverBudgetMode = overBudgetPercent ? OverBudgetMode.Percent : OverBudgetMode.Credits,
             OverBudgetValue = limit, PanelHotkey = panelHotkey, AuditHotkey = auditHotkey,
-            ToolbarX = toolbarX, ToolbarY = toolbarY
+            ToolbarX = toolbarX, ToolbarY = toolbarY, CategoryRules = categoryChoices
         };
     }
 
@@ -187,10 +202,12 @@ public sealed partial class BestOfferMod : MelonMod
     {
         try
         {
+            UpdateCategoryRuleDate();
             RefreshManagerVisibility();
             bool managerVisible = ManagerIntegration.Visible;
             if (managerVisible)
             {
+                ResetSettingTooltip();
                 if (nativeLaunchers != null) nativeLaunchers.SetActive(false);
                 if (launcherNotice != null) launcherNotice.gameObject.SetActive(false);
                 return;
@@ -200,7 +217,11 @@ public sealed partial class BestOfferMod : MelonMod
             if (captureHotkey != 0) return;
             // Native InputField handles numeric editing.
             if (ManagerIntegration.Down(panelHotkey)) { Toggle(); }
-            if (IsOpen && Input.GetKeyDown(KeyCode.Escape)) { Close(); }
+            if (IsOpen && Input.GetKeyDown(KeyCode.Escape))
+            {
+                if (uiTab == 1 && categoryPickerOpen) { categoryPickerOpen = false; uiDirty = true; SuppressTransitionInput(); }
+                else Close();
+            }
             else if (QuickApplying && Input.GetKeyDown(KeyCode.Escape))
             { CancelQuick(); }
             if (IsOpen && ManagerIntegration.Down(auditHotkey))
@@ -308,7 +329,8 @@ public sealed partial class BestOfferMod : MelonMod
     {
         CancelQuick();
         if (IsOpen) SuppressTransitionInput();
-        IsOpen = false; captureHotkey = 0;
+        IsOpen = false; captureHotkey = 0; categoryPickerOpen = false;
+        ResetSettingTooltip();
         revision++; showConfirm = false;
         // Unity destroys scene objects before this callback; its overloaded null
         // check also recognizes an invalid native object, unlike ?. on the wrapper.
@@ -333,7 +355,12 @@ public sealed partial class BestOfferMod : MelonMod
     }
     void SaveRules()
     {
-        try { Directory.CreateDirectory(Path.GetDirectoryName(rulePath)!); File.WriteAllText(rulePath, System.Text.Json.JsonSerializer.Serialize(rules)); }
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(rulePath)!);
+            File.WriteAllText(rulePath, System.Text.Json.JsonSerializer.Serialize(rules));
+            File.WriteAllText(allGroupRulePath, System.Text.Json.JsonSerializer.Serialize(allGroupRules));
+        }
         catch (Exception e) { LoggerInstance.Warning("保存偏好失败: " + e.Message); }
     }
     void SaveSettings()
@@ -344,18 +371,33 @@ public sealed partial class BestOfferMod : MelonMod
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(settingsPath)!);
-            File.WriteAllText(settingsPath, System.Text.Json.JsonSerializer.Serialize(CurrentOptions(),
+            var saved = CurrentOptions();
+            // Retain the old global choices as migration defaults for runs that
+            // have not yet opened their own category profile.
+            saved.BlockContraband = blockContraband; saved.BlockStolen = blockStolen;
+            File.WriteAllText(settingsPath, System.Text.Json.JsonSerializer.Serialize(saved,
                 new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
         }
         catch (Exception e) { LoggerInstance.Warning("保存报价选项失败: " + e.Message); }
     }
-    int OwnRule(string key) => ItemRuleGroupLogic.OwnRule(rules, key);
-    int Rule(TradeItem i)
+    int OwnRule(string key) => OwnRule(key, snapshot);
+    int OwnRule(string key, TradeSnapshot? context) =>
+        context != null && context.RuleMembers.TryGetValue(key, out var member)
+            ? ItemRuleGroupLogic.OwnRule(rules, allGroupRules, member) : ItemRuleGroupLogic.OwnRule(rules, key);
+    int CategoryRule(string key, TradeSnapshot? context) => context?.CategoryOverrides.GetValueOrDefault(key) ?? 0;
+    int EffectiveOwnRule(string key, TradeSnapshot context) =>
+        CategoryRule(key, context) is 1 or 2 ? CategoryRule(key, context) : OwnRule(key, context);
+    int Rule(TradeItem i) => Rule(i, snapshot);
+    int Rule(TradeItem i, TradeSnapshot? context)
     {
-        return ItemRuleGroupLogic.EffectiveRule(rules, i.Key, i.DescendantKeys);
+        var keys = i.DescendantKeys.Prepend(i.Key).ToArray();
+        return CategoryRuleLogic.EffectiveRule(keys.Select(key => CategoryRule(key, context)),
+            keys.Select(key => OwnRule(key, context)));
     }
     string RuleNote(TradeItem i)
     {
+        int category = CategoryRuleLogic.EffectiveRule(i.DescendantKeys.Prepend(i.Key).Select(key => CategoryRule(key, snapshot)), Array.Empty<int>());
+        if (category != 0) return category == 1 ? " · 分类必卖优先" : " · 分类禁卖优先";
         int contents = 0;
         foreach (var key in i.DescendantKeys) contents |= OwnRule(key);
         if (Rule(i) == 3) return " · 必卖/禁卖冲突";
@@ -365,16 +407,26 @@ public sealed partial class BestOfferMod : MelonMod
     {
         if (snapshot == null) return;
         groupQuantities.Clear(); groupModes.Clear();
+        string scope = PlayerStore.Instance.runID + "\u001e";
+        foreach (string key in allGroupRules.Keys.Where(key => key.StartsWith(scope, StringComparison.Ordinal)).ToArray())
+            allGroupRules.Remove(key);
         foreach (var item in snapshot.Items)
         {
             rules.Remove(item.Key);
             foreach (var key in item.DescendantKeys) rules.Remove(key);
         }
         revision++; plans.Clear(); showConfirm = false; SaveRules();
-        status = "当前库存及容器内容物的规则已清除。";
+        status = "当前库存、容器内容及本存档的持续「全部」规则已清除。";
     }
     void SetRule(TradeItem i, int rule)
     {
+        string groupKey = ItemRuleGroupLogic.GroupKey(i.ParentKey, i.Name, i.Key);
+        if (allGroupRules.ContainsKey(groupKey) && snapshot != null)
+        {
+            ItemRuleGroupLogic.DisableAll(rules, allGroupRules, groupKey, snapshot.RuleMembers.Values);
+            groupQuantities[groupKey] = snapshot.Items.Count(item => item.ParentKey == i.ParentKey && item.Name == i.Name);
+        }
+        else groupQuantities.Remove(groupKey);
         if (rule == 0) rules.Remove(i.Key); else rules[i.Key] = rule;
         revision++; plans.Clear(); showConfirm = false;
         status = snapshot?.CanTrade == true ? "筛选条件已更改，请重新计算。" : "规则已保存，买家到来后应用。";
@@ -387,9 +439,7 @@ public sealed partial class BestOfferMod : MelonMod
         snapshot = adapter.Capture(CurrentOptions()); revision++; plans.Clear(); showConfirm = false;
         if (!snapshot.CanTrade) { status = snapshot.Message; return; }
         var includedKeys = snapshot.Items.SelectMany(i => i.DescendantKeys.Append(i.Key)).ToHashSet(StringComparer.Ordinal);
-        var requiredOutsideScope = rules.Where(p => p.Value == 1 && !includedKeys.Contains(p.Key))
-            .Select(p => p.Key).ToHashSet(StringComparer.Ordinal);
-        if (requiredOutsideScope.Count > 0 && (!includeShowcase || !includeHiddenStorage || !includeContainerContents ||
+        if ((rules.Any(p => p.Value == 1) || allGroupRules.Any(p => p.Value == 1) || snapshot.Options.CategoryRules.Any(p => p.Mode == 1)) && (!includeShowcase || !includeHiddenStorage || !includeContainerContents ||
             !includeMachineContents || !includeMachineProducts || !splitRetailPackages))
         {
             // Check only when explicitly calculating. Old rules for sold objects
@@ -400,6 +450,8 @@ public sealed partial class BestOfferMod : MelonMod
             allSources.IncludeContainerContents = allSources.IncludeMachineContents = allSources.IncludeMachineProducts = allSources.SplitRetailPackages = true;
             var fullScope = adapter.Capture(allSources);
             if (!fullScope.CanTrade) { status = "无法确认必卖物品范围：" + fullScope.Message; return; }
+            var requiredOutsideScope = fullScope.RuleMembers.Keys.Where(key =>
+                !includedKeys.Contains(key) && EffectiveOwnRule(key, fullScope) == 1).ToHashSet(StringComparer.Ordinal);
             var excludedRequired = fullScope.Items.Where(i => requiredOutsideScope.Contains(i.Key) ||
                 i.DescendantKeys.Any(requiredOutsideScope.Contains)).ToList();
             if (excludedRequired.Count > 0)
@@ -436,6 +488,7 @@ public sealed partial class BestOfferMod : MelonMod
             {
                 snapshot!.ClientKey, snapshot.ClientName, snapshot.Budget, snapshot.SelectionBudget, snapshot.Options, snapshot.RequireVariety, snapshot.MaxItems,
                 snapshot.MarketDay, snapshot.MarketSummary, snapshot.MarketSignature,
+                allGroupRules,
                 items = snapshot.Items.Select(i => new { i.Key, i.Group, i.Name, i.Price, i.Source, i.Eligible, i.Reason,
                     i.ParentKey, i.RuleOnly, i.IsRetailPackage, i.UnitCount, i.ContainedUnits, i.MarketDiscounted, i.MarketMarkedUp,
                     i.DescendantKeys, rule = Rule(i), ownRule = OwnRule(i.Key) }),

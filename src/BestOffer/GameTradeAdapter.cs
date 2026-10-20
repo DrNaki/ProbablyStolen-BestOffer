@@ -47,6 +47,10 @@ public sealed class TradeSnapshot
     public string MarketSignature { get; set; } = "";
     public string MarketSummary { get; set; } = "";
     public List<TradeItem> Items { get; set; } = new();
+    // Include unexpanded contents as well: a same-name All rule must protect
+    // newly acquired items even when they are sold inside a whole container.
+    public Dictionary<string, InventoryRuleMember> RuleMembers { get; set; } = new(StringComparer.Ordinal);
+    public Dictionary<string, int> CategoryOverrides { get; set; } = new(StringComparer.Ordinal);
 }
 
 public sealed class TradeActionResult
@@ -81,7 +85,7 @@ public sealed class GameTradeAdapter
             var marketTypes = marketEvents.SelectMany(ev => ev.negociationDatas?.ToArray() ?? Array.Empty<NegociationData>()).Where(data => data != null).ToArray();
             result.MarketSummary = $"第 {result.MarketDay} 天  ·  打折 {marketTypes.Where(d => d.value < 0).Select(d => d.itemType).Distinct().Count()} 类 / 加价 {marketTypes.Where(d => d.value > 0).Select(d => d.itemType).Distinct().Count()} 类";
             var unavailableReason = "";
-            if (store == null || client == null) unavailableReason = "等待买家到来；现在可先设置必卖 / 禁卖。";
+        if (store == null || client == null) unavailableReason = "等待买家到来；现在可以设置售卖规则。";
             else
             {
                 result.ClientKey = ClientKey(client);
@@ -175,6 +179,8 @@ public sealed class GameTradeAdapter
                     }
                     if (expanded) row.Reason = row.IsRetailPackage ? "已选择拆售包装内容，本体不参与出售" : "已展开允许的内容，本体不参与整件出售";
                     else if (removalReason.Length > 0) row.Reason = removalReason;
+                    else if (NativeInventorySourcePolicy.ProtectsToolboxContents(descendants, result.Options.IncludeMachineContents))
+                        row.Reason = "未启用机器货源：保留工具箱内的工具";
                     else if (!result.CanTrade) row.Reason = "等待交易";
                     else if (!client!.IsClientBuyingThisItem(item)) row.Reason = "买家不收此物品";
                     else if (client.isRequireVariety && client.IsItemInVarietyList(item)) row.Reason = "买家已经买过同种物品";
@@ -270,6 +276,24 @@ public sealed class GameTradeAdapter
                 if (identities.TryGetValue(key, out var pointer) && pointer != item.Pointer)
                     throw new InvalidOperationException("存档中存在重复物品 ID，无法安全区分必卖/禁卖规则。");
                 identities[key] = item.Pointer;
+                if (!result.RuleMembers.ContainsKey(key))
+                {
+                    string parentKey = "";
+                    var parent = item.parentInventory?.GetParentItem();
+                    var visited = new HashSet<IntPtr> { item.Pointer };
+                    while (parent != null && visited.Add(parent.Pointer))
+                    {
+                        if (NativeInventorySourcePolicy.GetContainerKind(parent) == InventoryContainerKind.RetailPackage)
+                        { parentKey = ItemKey(parent); break; }
+                        parent = parent.parentInventory?.GetParentItem();
+                    }
+                    result.RuleMembers[key] = new InventoryRuleMember(key,
+                        item.GetDisplayName(false) ?? item.name ?? item.identifier ?? "物品", parentKey);
+                    bool demand = result.CanTrade && client != null && result.Options.CategoryRules.Any(c => c.AllowDemandException) && HasExplicitDemand(item, client);
+                    int category = CategoryRuleLogic.Resolve(result.Options.CategoryRules,
+                        id => NativeCategoryPolicy.Matches(item, id), demand, result.MarketDay);
+                    if (category != 0) result.CategoryOverrides[key] = category;
+                }
                 return key;
             }
         }
@@ -293,7 +317,9 @@ public sealed class GameTradeAdapter
                 snapshot.Options.BlockMarketDiscounts, snapshot.Options.PreferMarketMarkups,
                 snapshot.Options.BlockContraband, snapshot.Options.BlockStolen,
                 snapshot.Options.AllowContrabandDemandExceptions, snapshot.Options.AllowStolenDemandExceptions,
-                snapshot.Options.OverBudgetMode, snapshot.Options.OverBudgetValue },
+                snapshot.Options.OverBudgetMode, snapshot.Options.OverBudgetValue, snapshot.Options.CategoryRules },
+            RuleMembers = snapshot.RuleMembers.Values.OrderBy(i => i.Key, StringComparer.Ordinal).ToArray(),
+            CategoryOverrides = snapshot.CategoryOverrides.OrderBy(p => p.Key, StringComparer.Ordinal).ToArray(),
             Items = snapshot.Items.OrderBy(i => i.Key, StringComparer.Ordinal).Select(i => new
             {
                 i.Key, i.Group, i.Name, i.Price, i.PriceKnown, i.RiskBlocked, i.Eligible, i.Reason, i.Source,
@@ -592,24 +618,27 @@ public sealed class GameTradeAdapter
         var contraband = item.IsTag("CONTRABAND_ITEM_TAG");
         var stolen = item.IsTag("STOLEN_TAG");
         if (!contraband && !stolen) return false;
-        var ids = new List<string>();
-        var tags = new List<string>();
-        if (client != null && !client.isBusinessComplete && !client.isRegularSellDisable &&
-            client.IsClientBuying() && (options.AllowContrabandDemandExceptions || options.AllowStolenDemandExceptions))
-        {
-            if (client.clientBuyingIdList != null)
-                for (var n = 0; n < client.clientBuyingIdList.Count; n++) ids.Add(client.clientBuyingIdList[n]);
-            if (client.clientBuyingTagList != null)
-                for (var n = 0; n < client.clientBuyingTagList.Count; n++) tags.Add(client.clientBuyingTagList[n]);
-        }
-        var demand = RiskPolicy.MatchesExplicitDemand(item.identifier ?? "", ids, tags, tag => item.IsTag(tag));
+        var demand = client != null && (options.AllowContrabandDemandExceptions || options.AllowStolenDemandExceptions) && HasExplicitDemand(item, client);
         return RiskPolicy.GetBlockedCategories(options, contraband, stolen, demand, refusesRiskyGoods) != RiskCategory.None;
+    }
+
+    private static bool HasExplicitDemand(GameItem item, StoreClient client)
+    {
+        if (client.isBusinessComplete || client.isRegularSellDisable || !client.IsClientBuying()) return false;
+        var ids = client.clientBuyingIdList?.ToArray() ?? Array.Empty<string>();
+        var tags = client.clientBuyingTagList?.ToArray() ?? Array.Empty<string>();
+        return RiskPolicy.MatchesExplicitDemand(item.identifier ?? "", ids, tags, tag => item.IsTag(tag));
     }
 
     private static bool IsSaleBundleRiskBlocked(GameItem item, TradeOptions options, StoreClient? client)
     {
-        if (client?.noAcceptingContraband != true && !options.BlockContraband && !options.BlockStolen) return false;
-        if (IsRiskBlocked(item, options, client)) return true;
+        if (client?.noAcceptingContraband != true && !options.BlockContraband && !options.BlockStolen &&
+            !options.CategoryRules.Any(c => c.Mode == 2)) return false;
+        bool Blocked(GameItem entity) => IsRiskBlocked(entity, options, client) ||
+            CategoryRuleLogic.Resolve(options.CategoryRules, id => NativeCategoryPolicy.Matches(entity, id),
+                client != null && options.CategoryRules.Any(c => c.AllowDemandException) && HasExplicitDemand(entity, client),
+                StoreStation.Instance?.dayCounter ?? 0) == 2;
+        if (Blocked(item)) return true;
         // Re-read the physical graph after native callbacks. This traversal
         // never calls ItemKey/GetUniqueID, writes identities, or computes a quote.
         var descendants = GraphUtils.FindAllChildrenType<GameItem>(item.Cast<GraphNodeStorage>(), null, null);
@@ -617,7 +646,7 @@ public sealed class GameTradeAdapter
         for (var n = 0; n < descendants.Count; n++)
         {
             var child = descendants[n];
-            if (child != null && seen.Add(child.Pointer) && IsRiskBlocked(child, options, client)) return true;
+            if (child != null && seen.Add(child.Pointer) && Blocked(child)) return true;
         }
         return false;
     }

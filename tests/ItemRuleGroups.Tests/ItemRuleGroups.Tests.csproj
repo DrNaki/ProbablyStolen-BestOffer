@@ -5,5 +5,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
-  <ItemGroup><Compile Include="../../src/BestOffer/ItemRuleGroupLogic.cs" Link="ItemRuleGroupLogic.cs" /></ItemGroup>
+  <ItemGroup>
+    <Compile Include="../../src/BestOffer/ItemRuleGroupLogic.cs" Link="ItemRuleGroupLogic.cs" />
+    <Compile Include="../../src/BestOffer/OfferSolver.cs" Link="OfferSolver.cs" />
+  </ItemGroup>
 </Project>

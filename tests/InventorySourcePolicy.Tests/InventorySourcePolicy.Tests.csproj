@@ -9,5 +9,6 @@
     <Compile Include="../../src/BestOffer/InventorySourcePolicy.cs" Link="InventorySourcePolicy.cs" />
     <Compile Include="../../src/BestOffer/NativeInventorySourcePolicy.cs" Link="NativeInventorySourcePolicy.cs" />
     <Compile Include="../../src/BestOffer/TradeOptions.cs" Link="TradeOptions.cs" />
+    <Compile Include="../../src/BestOffer/CategoryRuleLogic.cs" Link="CategoryRuleLogic.cs" />
   </ItemGroup>
 </Project>

@@ -8,6 +8,7 @@
   <ItemGroup>
     <Compile Include="../../src/BestOffer/RiskPolicy.cs" Link="RiskPolicy.cs" />
     <Compile Include="../../src/BestOffer/TradeOptions.cs" Link="TradeOptions.cs" />
+    <Compile Include="../../src/BestOffer/CategoryRuleLogic.cs" Link="CategoryRuleLogic.cs" />
     <Compile Include="../../src/BestOffer/OfferSolver.cs" Link="OfferSolver.cs" />
     <Compile Include="../../src/BestOffer/ItemRuleGroupLogic.cs" Link="ItemRuleGroupLogic.cs" />
   </ItemGroup>

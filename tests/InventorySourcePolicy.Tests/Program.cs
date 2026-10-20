@@ -103,6 +103,27 @@ Allowed(tablet, new() { SplitRetailPackages = true }, false, "every outer physic
 var bottle = new GameItem { identifier = "ocutol_pill_bottle", parentInventory = root };
 Equal(InventoryContainerKind.RetailPackage, NativeInventorySourcePolicy.GetContainerKind(bottle), "untagged native pharmacy bottle remains packaged");
 
+var toolbox = new GameItem { identifier = "toolbox", parentInventory = root };
+toolbox.Tags.Add("CONTAINER_TAG");
+var toolSlot = new GameInventory { Owner = toolbox };
+var tool = new GameItem { identifier = "metal_scanner", parentInventory = toolSlot };
+Equal(InventoryContainerKind.Machine, NativeInventorySourcePolicy.GetContainerKind(toolbox), "toolbox uses the machine source option");
+Allowed(tool, ordinary, false, "storage opt-in does not expose tools in a toolbox");
+Allowed(tool, products, false, "products opt-in does not expose toolbox tools");
+Allowed(tool, new() { IncludeContainerContents = true, IncludeMachineProducts = true }, false, "storage and products together still preserve tools");
+Allowed(tool, machineInputsOnly, true, "machine opt-in exposes tools in a reachable toolbox");
+Equal(true, NativeInventorySourcePolicy.ProtectsToolboxContents(new[] { tool }, false), "filled toolbox cannot be sold as a bundle while machines are off");
+Equal(false, NativeInventorySourcePolicy.ProtectsToolboxContents(new[] { tool }, true), "explicit machine opt-in permits the tools");
+Equal(false, NativeInventorySourcePolicy.ProtectsToolboxContents(Array.Empty<GameItem>(), false), "an empty toolbox does not protect unrelated stock");
+toolbox.parentInventory = boxSlot;
+Allowed(tool, ordinary, false, "a toolbox inside a backpack retains machine protection");
+Allowed(tool, new() { IncludeContainerContents = true, IncludeMachineContents = true }, true, "nested tools require both storage and machine opt-in");
+Allowed(tool, machineInputsOnly, false, "machine opt-in cannot bypass an excluded outer storage container");
+Equal(true, NativeInventorySourcePolicy.ProtectsToolboxContents(new[] { toolbox, tool }, false), "selling the outer storage container cannot bypass toolbox protection");
+tool.parentInventory = root;
+Allowed(tool, new(), true, "a tool manually removed from the toolbox is normal inventory");
+Equal(false, NativeInventorySourcePolicy.ProtectsToolboxContents(new[] { tool }, false), "loose tools are unaffected");
+
 var weapon = new GameItem { identifier = "firearm", parentInventory = root };
 weapon.Types.Add("FIREARM");
 weapon.Tags.Add("CONTAINER_TAG");

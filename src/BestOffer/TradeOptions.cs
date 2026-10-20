@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 
 namespace DeepSpaceBestOffer;
 
@@ -28,7 +29,17 @@ public sealed class TradeOptions
     public float ToolbarX { get; set; } = -1;
     public float ToolbarY { get; set; } = 18;
 
-    public TradeOptions Clone() => (TradeOptions)MemberwiseClone();
+    // Per-run rules have their own persisted book. Never serialize a captured
+    // run's active choices into the global preferences file.
+    [System.Text.Json.Serialization.JsonIgnore]
+    public CategoryRuleSelection[] CategoryRules { get; set; } = Array.Empty<CategoryRuleSelection>();
+
+    public TradeOptions Clone()
+    {
+        var clone = (TradeOptions)MemberwiseClone();
+        clone.CategoryRules = CategoryRules.ToArray();
+        return clone;
+    }
 
     public bool TryGetSelectionBudget(long budget, out long limit, out string error)
     {

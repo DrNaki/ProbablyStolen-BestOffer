@@ -18,6 +18,8 @@ public sealed partial class BestOfferMod
     // All controls use the game's uGUI event system and its Chinese TMP font.
     // The original trade screen owns the launchers, so they follow its visibility.
     GameObject? nativeLaunchers, nativePage;
+    GameObject? hoveredSettingTooltip, hoveredSettingTarget;
+    float settingTooltipShowAt;
     TMP_FontAsset? nativeFont;
     Sprite? nativeButtonSprite, nativeTabletSprite;
     TextMeshProUGUI? nativeStatus, launcherNotice;
@@ -35,7 +37,9 @@ public sealed partial class BestOfferMod
     static readonly Color Rust = new(.58f, .22f, .10f), Muted = new(.47f, .39f, .27f);
     static readonly Color Green = new(.33f, .43f, .23f), Line = new(.70f, .55f, .35f);
     const float NativeWidth = 1120, NativeHeight = 736;
+    const float CategoryPageHeight = 688;
     const int GroupRows = 5;
+    const float SettingTooltipDelaySeconds = .5f;
 
     void UpdateNativeUI()
     {
@@ -45,7 +49,7 @@ public sealed partial class BestOfferMod
         if (Input.GetMouseButton(0)) nativeUiRebuildHeldThroughFrame = Time.frameCount + 1;
         if (Input.GetMouseButtonUp(0)) nativeUiRebuildHeldThroughFrame = Time.frameCount;
         var neg = NegociationUIManager.Instance;
-        if (neg == null || EmporiumEntry.Instance == null) return;
+        if (neg == null || EmporiumEntry.Instance == null) { ResetSettingTooltip(); return; }
         if (nativeFont == null) nativeFont = FontLoader.Instance?.simplifiedChineseFont ?? neg.acceptOfferButtonButtonTMP?.font ?? neg.titleTMP?.font;
         if (nativeButtonSprite == null) nativeButtonSprite = neg.acceptOfferButtonButton?.GetComponent<Image>()?.sprite;
         if (nativeLaunchers == null && neg.uiObject != null && nativeFont != null)
@@ -73,13 +77,15 @@ public sealed partial class BestOfferMod
             if (launcherNotice != null) launcherNotice.text = QuickApplying ? "正在计算……\nEsc 取消" :
                 Time.unscaledTime < quickNoticeUntil ? quickNotice : $"{panelHotkey}\n打开报价配置";
         }
-        if (!IsOpen) { if (blocker != null) blocker.SetActive(false); return; }
+        if (!IsOpen) { ResetSettingTooltip(); if (blocker != null) blocker.SetActive(false); return; }
         EnsureNativePanel();
         string signature = System.Text.Json.JsonSerializer.Serialize(new { revision, status, busy, selected, filter,
             itemPage, planPage, detailPage, showConfirm, uiTab, expandedGroup, inventoryParentKey, groupDetailPage, captureHotkey,
+            selectedCategoryId, categoryPickerOpen,
             planCount = plans.Count, items = snapshot?.Items.Count });
         if ((uiDirty || signature != uiSignature) && Time.frameCount > nativeUiRebuildHeldThroughFrame)
         { uiDirty = false; uiSignature = signature; RebuildNativePage(); }
+        UpdateSettingTooltip();
     }
 
     void EnsureNativePanel()
@@ -102,27 +108,37 @@ public sealed partial class BestOfferMod
 
     void DestroyNativeUI()
     {
+        ResetSettingTooltip();
         if (blocker != null) UnityEngine.Object.Destroy(blocker);
         if (nativeLaunchers != null) UnityEngine.Object.Destroy(nativeLaunchers);
         if (launcherNotice != null) UnityEngine.Object.Destroy(launcherNotice.gameObject);
         launcherNotice = nativeStatus = null; quickButton = null;
         blocker = nativeLaunchers = nativePage = null; nativeFont = null; nativeTabletSprite = nativeButtonSprite = null;
         uiSignature = ""; uiDirty = true;
+        categoryPickerOpen = false; categoryIconSprites.Clear(); categoryIconAtlases.Clear();
+        foreach (var sprite in fittedCategorySprites) if (sprite != null) UnityEngine.Object.Destroy(sprite);
+        fittedCategorySprites.Clear();
         ResetInventoryNavigation();
     }
 
     void RebuildNativePage()
     {
         if (blocker == null) return;
+        ResetSettingTooltip();
         if (nativePage != null) { nativePage.SetActive(false); UnityEngine.Object.Destroy(nativePage); }
-        nativePage = RectObject("Tablet", blocker.transform, 0, 0, NativeWidth, NativeHeight);
+        float pageHeight = uiTab == 1 ? CategoryPageHeight : NativeHeight;
+        nativePage = RectObject("Tablet", blocker.transform, 0, 0, NativeWidth, pageHeight);
+        // Configure the whole page before Selectable.OnEnable runs. Enabling a
+        // completed page applies its final disabled tints immediately instead
+        // of fading newly created controls from their default enabled state.
+        nativePage.SetActive(false);
         var rt = nativePage.GetComponent<RectTransform>(); rt.anchorMin = rt.anchorMax = new Vector2(.5f, .5f);
         rt.pivot = new Vector2(.5f, .5f); rt.anchoredPosition = Vector2.zero;
         var shell = nativePage.AddComponent<Image>(); shell.color = new Color(.39f, .33f, .31f);
         // Use the real tablet frame when available. The fallback preserves its palette.
         if (nativeTabletSprite != null) { shell.sprite = nativeTabletSprite; shell.type = Image.Type.Sliced; shell.color = Color.white; }
-        var screen = MakeBox(nativePage.transform, 24, 34, 1072, 676, Line);
-        MakeBox(screen.transform, 3, 3, 1066, 670, Paper);
+        var screen = MakeBox(nativePage.transform, 24, 34, 1072, pageHeight - 60, Line);
+        MakeBox(screen.transform, 3, 3, 1066, pageHeight - 66, Paper);
         var root = nativePage.transform;
         MakeText(root, 48, 50, 670, 34, "最佳报价", 27, Rust);
         MakeText(root, 49, 87, 770, 24, snapshot == null || !snapshot.CanTrade ?
@@ -142,9 +158,13 @@ public sealed partial class BestOfferMod
         else if (uiTab == 1) BuildCategoryRulesPage(root);
         else if (uiTab == 2) BuildPlansPage(root);
         else BuildSettingsPage(root);
-        MakeBox(root, 48, 639, 1024, 1, Line);
-        nativeStatus = MakeText(root, 48, 650, 806, 46, status, 13, Ink);
-        MakeText(root, 874, 663, 198, 22, "Esc 返回交易  ·  1.4.3", 12, Muted, TextAlignmentOptions.Right);
+        var footerLine = MakeBox(root, 48, pageHeight - 97, 1024, 1, Line);
+        nativeStatus = MakeText(root, 48, pageHeight - 86, 806, 46, status, 13, Ink);
+        var footerHelp = MakeText(root, 874, pageHeight - 73, 198, 22, "Esc 返回交易  ·  1.5.0", 12, Muted, TextAlignmentOptions.Right);
+        bool showFooter = uiTab != 1 || !categoryPickerOpen;
+        footerLine.SetActive(showFooter); nativeStatus.gameObject.SetActive(showFooter); footerHelp.gameObject.SetActive(showFooter);
+        if (uiTab == 1 && categoryPickerOpen) BuildCategoryPicker(root);
+        nativePage.SetActive(true);
         blocker.SetActive(IsOpen);
     }
 
@@ -156,7 +176,7 @@ public sealed partial class BestOfferMod
         if (expandedGroup.Length > 0) { BuildGroupDetail(root); return; }
         if (package == null)
         {
-            MakeText(root, 48, 188, 690, 26, "同名商品一起设置，数量默认全部。包装内的单片规则可在单件中配置。", 14, Ink);
+            MakeText(root, 48, 188, 790, 26, "勾选「全部」可持续必卖／禁卖同名商品（含新增）；取消后可编辑数量。", 14, Ink);
             string[] filters = { "全部", "可卖", "必卖", "禁卖" };
             for (int f = 0; f < filters.Length; f++)
             { int v = f; MakeButton(root, 48 + f * 85, 225, 77, 28, filters[f], () => { filter = v; itemPage = 0; uiDirty = true; }, filter == f ? Rust : Muted); }
@@ -187,15 +207,20 @@ public sealed partial class BestOfferMod
                 (group.Items.Any(i => i.RiskBlocked) ? $"  ·  自动禁卖 {group.Items.Count(i => i.RiskBlocked)}" :
                 group.EligibleCount == 0 && group.Items.All(i => i.PriceKnown) ? "  ·  暂不可卖" : ""), 12, Muted);
             int count = CurrentGroupQuantityFromUI(group);
-            MakeButton(root, 388, y + 10, 34, 32, "−", () => ChangeGroupQuantity(group, CurrentGroupQuantityFromUI(group) - 1), Muted, !busy);
-            MakeQuantityField(root, 429, y + 10, 105, 32, group, count);
-            MakeButton(root, 541, y + 10, 34, 32, "+", () => ChangeGroupQuantity(group, CurrentGroupQuantityFromUI(group) + 1), Muted, !busy);
-            MakeButton(root, 590, y + 10, 58, 32, "全部", () => ChangeGroupQuantity(group, group.Count), Muted, !busy);
+            bool all = GroupSelectsAll(group);
+            MakeButton(root, 388, y + 10, 34, 32, "−", () => ChangeGroupQuantity(group, CurrentGroupQuantityFromUI(group) - 1), Muted, !busy && !all);
+            var quantityField = MakeQuantityField(root, 429, y + 10, 105, 32, group, count);
+            MakeButton(root, 541, y + 10, 34, 32, "+", () => ChangeGroupQuantity(group, CurrentGroupQuantityFromUI(group) + 1), Muted, !busy && !all);
+            var allButton = MakeButton(root, 590, y + 10, 68, 32, all ? "✓ 全部" : "全部", () => ToggleGroupAllFromUI(group), all ? Green : Muted, !busy);
             MakeButton(root, 672, y + 10, 120, 32, req > 0 ? $"必卖 {req} ✓" : "必卖", () =>
             ToggleGroupRuleFromUI(group, 1), req > 0 ? Green : Muted, !busy);
             MakeButton(root, 804, y + 10, 120, 32, ban > 0 ? $"禁卖 {ban} ✓" : "禁卖", () =>
             ToggleGroupRuleFromUI(group, 2), ban > 0 ? Rust : Muted, !busy);
             MakeButton(root, 940, y + 10, 132, 32, "查看单件 →", () => { expandedGroup = group.Name; groupDetailPage = 0; uiDirty = true; }, Muted);
+            string allExplanation = all ? "已勾选「全部」，数量随库存变化，不能手动编辑。\n取消勾选即可编辑，数量保留为当时的最大值。" :
+                "勾选后，必卖／禁卖会覆盖今后新增的同名商品。\n数量始终显示当前最大值；取消勾选后可编辑。";
+            AddSettingTooltip(allButton, root, allExplanation, 388, y + 44, 536, 52);
+            if (all) AddSettingTooltip(quantityField.gameObject, root, allExplanation, 388, y + 44, 536, 52);
         }
         if (groups.Count == 0) MakeText(root, 48, 295, 1024, 100, snapshot.CanTrade ? "此分类没有商品。" :
             snapshot.Items.Count > 0 ? "此分类没有商品，可切换「全部」提前设置库存规则。" : snapshot.Message, 18, Muted);
@@ -205,48 +230,62 @@ public sealed partial class BestOfferMod
         MakeButton(root, 976, 597, 96, 28, "下一页 →", () => { itemPage++; uiDirty = true; }, Muted, itemPage < pages - 1);
     }
 
-    void BuildCategoryRulesPage(Transform root)
+    void MakeCategoryDayField(Transform parent, float x, float y, float w, float h, TradeCategory category, CategorySaleRule rule, TextMeshProUGUI expiry)
     {
-        MakeText(root, 48, 189, 670, 28, "按商品类别设置自动禁卖，设置自动保存。", 14, Ink);
-        string riskSummary = !blockContraband && !blockStolen ? "自动禁卖未启用" :
-            snapshot == null || !snapshot.CanTrade ? "等待买家  ·  规则可先设置" :
-            $"本次自动禁卖 {snapshot.Items.Count(i => i.RiskBlocked)} 件";
-        MakeText(root, 742, 189, 330, 28, riskSummary, 13, Muted, TextAlignmentOptions.Right);
-
-        BuildCategoryRuleRow(root, 246, "违禁品", "按游戏的违禁品标记筛选。\n整箱出售时也检查内容物。", blockContraband,
-            allowContrabandDemandExceptions,
-            () => { blockContraband = !blockContraband; OptionsChanged(); },
-            () => { allowContrabandDemandExceptions = !allowContrabandDemandExceptions; OptionsChanged(); });
-        MakeBox(root, 48, 378, 1024, 1, Line);
-        BuildCategoryRuleRow(root, 410, "赃物", "按游戏的赃物标记筛选。\n与违禁品规则分别设置。", blockStolen,
-            allowStolenDemandExceptions,
-            () => { blockStolen = !blockStolen; OptionsChanged(); },
-            () => { allowStolenDemandExceptions = !allowStolenDemandExceptions; OptionsChanged(); });
-        MakeBox(root, 48, 546, 1024, 1, Line);
-        MakeText(root, 48, 568, 1024, 56,
-            "需求例外只解除对应类别的自动禁卖；明确拒收违禁品的买家也不摆售赃物。\n手动禁卖与买家拒收始终有效；必卖受保护时，请先调整规则再报价。", 14, Muted);
-    }
-
-    void BuildCategoryRuleRow(Transform root, float y, string category, string description, bool blocked,
-        bool allowDemand, Action toggleBlocked, Action toggleDemand)
-    {
-        MakeText(root, 48, y + 3, 330, 32, category, 21, Rust);
-        MakeText(root, 48, y + 43, 330, 64, description, 14, Ink);
-        MakeButton(root, 404, y, 668, 40, (blocked ? "✓ " : "") + "禁卖所有" + category,
-            toggleBlocked, blocked ? Rust : Muted, !busy);
-        MakeButton(root, 404, y + 54, 668, 38, (allowDemand ? "✓ " : "") + "买家明确需要时，允许出售" + category,
-            toggleDemand, allowDemand ? Green : Muted, !busy && blocked);
+        var go = MakeBox(parent, x, y, w, h, rule.Limited ? new Color(.93f, .85f, .65f) : new Color(.70f, .69f, .65f));
+        var label = RectObject("Days", go.transform, 5, 2, w - 10, h - 4).AddComponent<Text>();
+        label.font = Resources.GetBuiltinResource<Font>("Arial.ttf"); label.fontSize = 16; label.color = Ink;
+        label.alignment = TextAnchor.MiddleCenter; label.raycastTarget = false;
+        var input = go.AddComponent<InputField>(); input.textComponent = label; input.targetGraphic = go.GetComponent<Image>();
+        input.contentType = InputField.ContentType.IntegerNumber; input.characterLimit = 3;
+        string shown = CategoryRuleLogic.PeriodDaysForEditing(rule, CategoryClock().Day).ToString(CultureInfo.InvariantCulture);
+        input.text = shown; input.interactable = !busy && rule.Limited;
+        var colors = input.colors; colors.disabledColor = Color.white; input.colors = colors;
+        input.onValueChanged.AddListener((UnityAction<string>)(value =>
+        {
+            // Update the preview in place so typing keeps its focus and caret.
+            int day = CategoryClock().Day;
+            expiry.text = int.TryParse(value, out int days) && days is >= 1 and <= CategoryRuleLogic.MaxDurationDays
+                ? CategoryRuleLogic.ExpiryDescription(checked(day + days), day)
+                : $"请输入 1–{CategoryRuleLogic.MaxDurationDays} 天";
+        }));
+        input.onEndEdit.AddListener((UnityAction<string>)(value =>
+        {
+            if (!rule.Limited || value == shown) return;
+            if (int.TryParse(value, out int days) && days is >= 1 and <= CategoryRuleLogic.MaxDurationDays) SetCategoryPeriod(category, true, days);
+            else { status = $"有效期需为 1–{CategoryRuleLogic.MaxDurationDays} 天，已保留原设置。"; uiDirty = true; }
+        }));
     }
 
     int CurrentGroupQuantityFromUI(InventoryRuleGroup group)
     {
         int req = GroupOwnRuleCount(group, 1), ban = GroupOwnRuleCount(group, 2);
-        return groupQuantities.TryGetValue(GroupStateKey(group), out var q) ? Math.Clamp(q, 1, group.Count) :
-            ban > 0 && req == 0 ? ban : req > 0 && ban == 0 ? req : group.Count;
+        return ItemRuleGroupLogic.SelectedQuantity(GroupSelectsAll(group),
+            groupQuantities.TryGetValue(GroupStateKey(group), out var q) ? q : null, group.Count, req, ban);
+    }
+
+    int CurrentGroupModeFromUI(InventoryRuleGroup group)
+    {
+        string key = GroupStateKey(group);
+        if (allGroupRules.TryGetValue(key, out int all) && all is 1 or 2) return all;
+        if (groupModes.TryGetValue(key, out int mode) && mode is 1 or 2 && GroupOwnRuleCount(group, mode) > 0) return mode;
+        int req = GroupOwnRuleCount(group, 1), ban = GroupOwnRuleCount(group, 2);
+        return ban > 0 && req == 0 ? 2 : req > 0 && ban == 0 ? 1 : 0;
     }
 
     void ToggleGroupRuleFromUI(InventoryRuleGroup group, int rule)
     {
+        if (GroupSelectsAll(group))
+        {
+            string key = GroupStateKey(group);
+            int next = allGroupRules[key] == rule ? 0 : rule;
+            ItemRuleGroupLogic.SetAllRule(rules, allGroupRules, key, CurrentRuleMembers, next);
+            if (next == 0) groupModes.Remove(key); else groupModes[key] = next;
+            status = next == 0 ? $"「{group.Name}」已取消{(rule == 1 ? "必卖" : "禁卖")}，仍勾选全部。" :
+                $"「{group.Name}」全部{(next == 1 ? "必卖" : "禁卖")}，今后新增的同名商品也会应用。" + RuleNextStep();
+            AllGroupRuleChanged();
+            return;
+        }
         int quantity = CurrentGroupQuantityFromUI(group);
         int ownCount = GroupOwnRuleCount(group, rule);
         int target = Math.Min(quantity, GroupAvailableRuleCount(group, rule));
@@ -259,10 +298,9 @@ public sealed partial class BestOfferMod
 
     void ChangeGroupQuantity(InventoryRuleGroup group, int quantity)
     {
+        if (GroupSelectsAll(group)) return;
         quantity = Math.Clamp(quantity, 1, group.Count); groupQuantities[GroupStateKey(group)] = quantity;
-        int req = GroupOwnRuleCount(group, 1), ban = GroupOwnRuleCount(group, 2);
-        int mode = groupModes.TryGetValue(GroupStateKey(group), out var m) && m is 1 or 2 && GroupOwnRuleCount(group, m) > 0 ? m :
-            ban > 0 && req == 0 ? 2 : req > 0 && ban == 0 ? 1 : 0;
+        int mode = CurrentGroupModeFromUI(group);
         if (mode != 0) { groupModes[GroupStateKey(group)] = mode; SetGroupRule(group, mode, quantity); }
         else groupModes.Remove(GroupStateKey(group));
         uiDirty = true;
@@ -315,8 +353,8 @@ public sealed partial class BestOfferMod
                 (item.Eligible ? ItemFeatureSummary(item) : item.RuleOnly ? "仅设置包装内容规则" : item.Reason) + RuleNote(item), 12, Muted);
             if (item.IsRetailPackage) MakeButton(root, 632, y + 5, 144, 32, "内容规则 →", () => OpenPackageContents(item), Muted, !busy && hasPackageContents);
             int r = OwnRule(item.Key);
-            MakeButton(root, 792, y + 5, 128, 32, r == 1 ? "必卖 ✓" : "必卖", () => { SetRule(item, r == 1 ? 0 : 1); groupModes.Remove(GroupStateKey(group)); groupQuantities.Remove(GroupStateKey(group)); uiDirty = true; }, r == 1 ? Green : Muted, !busy);
-            MakeButton(root, 936, y + 5, 136, 32, r == 2 ? "禁卖 ✓" : "禁卖", () => { SetRule(item, r == 2 ? 0 : 2); groupModes.Remove(GroupStateKey(group)); groupQuantities.Remove(GroupStateKey(group)); uiDirty = true; }, r == 2 ? Rust : Muted, !busy);
+            MakeButton(root, 792, y + 5, 128, 32, r == 1 ? "必卖 ✓" : "必卖", () => { SetRule(item, r == 1 ? 0 : 1); groupModes.Remove(GroupStateKey(group)); uiDirty = true; }, r == 1 ? Green : Muted, !busy);
+            MakeButton(root, 936, y + 5, 136, 32, r == 2 ? "禁卖 ✓" : "禁卖", () => { SetRule(item, r == 2 ? 0 : 2); groupModes.Remove(GroupStateKey(group)); uiDirty = true; }, r == 2 ? Rust : Muted, !busy);
             MakeBox(root, 48, y + 53, 1024, 1, Line);
         }
         MakeButton(root, 48, 597, 96, 28, "← 上一页", () => { groupDetailPage--; uiDirty = true; }, Muted, groupDetailPage > 0);
@@ -393,15 +431,14 @@ public sealed partial class BestOfferMod
         const float left = 48, right = 584, column = 488, cell = 235;
         MakeText(root, left, 188, 1024, 28, "设置自动保存。库存与交易台始终参与，其他货源按需加入。", 14, Muted);
         MakeText(root, left, 227, column, 30, "报价货源", 21, Rust);
-        MakeText(root, left + 175, 230, column - 175, 24, "悬停「机器」「产物」查看说明", 12, Muted, TextAlignmentOptions.Right);
         MakeText(root, right, 227, column, 30, "当天行情", 21, Rust);
         MakeBox(root, 560, 227, 1, 210, Line).GetComponent<Image>().raycastTarget = false;
-        MakeButton(root, left, 263, cell, 38, (includeShowcase ? "✓ " : "") + "展示柜", () => { includeShowcase = !includeShowcase; OptionsChanged(); }, includeShowcase ? Green : Muted, !busy);
-        MakeButton(root, left + 253, 263, cell, 38, (includeHiddenStorage ? "✓ " : "") + "隐藏仓库", () => { includeHiddenStorage = !includeHiddenStorage; OptionsChanged(); }, includeHiddenStorage ? Green : Muted, !busy);
-        MakeButton(root, left, 307, cell, 38, (includeContainerContents ? "✓ " : "") + "储藏箱内容", () => { includeContainerContents = !includeContainerContents; OptionsChanged(); }, includeContainerContents ? Green : Muted, !busy);
+        var showcase = MakeButton(root, left, 263, cell, 38, (includeShowcase ? "✓ " : "") + "展示柜", () => { includeShowcase = !includeShowcase; OptionsChanged(); }, includeShowcase ? Green : Muted, !busy);
+        var hiddenStorage = MakeButton(root, left + 253, 263, cell, 38, (includeHiddenStorage ? "✓ " : "") + "隐藏仓库", () => { includeHiddenStorage = !includeHiddenStorage; OptionsChanged(); }, includeHiddenStorage ? Green : Muted, !busy);
+        var containers = MakeButton(root, left, 307, cell, 38, (includeContainerContents ? "✓ " : "") + "储藏箱内容", () => { includeContainerContents = !includeContainerContents; OptionsChanged(); }, includeContainerContents ? Green : Muted, !busy);
         var machine = MakeButton(root, left + 253, 307, cell, 38, (includeMachineContents ? "✓ " : "") + "机器", () => { includeMachineContents = !includeMachineContents; OptionsChanged(); }, includeMachineContents ? Green : Muted, !busy);
         var products = MakeButton(root, left, 351, cell, 38, (includeMachineProducts ? "✓ " : "") + "产物", () => { includeMachineProducts = !includeMachineProducts; OptionsChanged(); }, includeMachineProducts ? Green : Muted, !busy);
-        MakeButton(root, left + 253, 351, cell, 38, (splitRetailPackages ? "✓ " : "") + "允许拆售包装耗材", () => { splitRetailPackages = !splitRetailPackages; OptionsChanged(); }, splitRetailPackages ? Green : Muted, !busy);
+        var packages = MakeButton(root, left + 253, 351, cell, 38, (splitRetailPackages ? "✓ " : "") + "允许拆售包装耗材", () => { splitRetailPackages = !splitRetailPackages; OptionsChanged(); }, splitRetailPackages ? Green : Muted, !busy);
         MakeText(root, left, 399, column, 44,
             (includeContainerContents ? "储藏箱内容单独报价，保留展开的箱体。" : "储藏箱整体报价；内容禁卖会保护整箱。") + "\n" +
             (splitRetailPackages ? "包装耗材按单片选货，可在包装下设置规则。" : "包装耗材默认整盒／整瓶出售。"), 13, Ink);
@@ -424,11 +461,18 @@ public sealed partial class BestOfferMod
         MakeButton(root, 234, 568, 396, 38, captureHotkey == 1 ? "按功能键，Esc 取消" : "打开面板  /  " + panelHotkey, () => { captureHotkey = 1; uiDirty = true; }, Muted, !busy);
         MakeButton(root, 648, 568, 424, 38, captureHotkey == 2 ? "按功能键，Esc 取消" : "只读诊断  /  " + auditHotkey, () => { captureHotkey = 2; uiDirty = true; }, Muted, !busy);
         MakeText(root, 234, 608, 838, 20, "支持 Ctrl / Alt / Shift + 功能键；请避免与其他模组重复。", 12, Muted);
-        AddSettingTooltip(machine, root, "允许取出机器内的电池、模块和原材料。\n关闭时仍可单独选择产物。", left, 394, column, 54);
-        AddSettingTooltip(products, root, "仅取出机器输出位置的成品。\n不取走电池、模块和原材料。", left, 394, column, 54);
+        AddSettingTooltip(showcase, root, "店铺展示柜里摆放的商品。", left, 394, column, 54);
+        AddSettingTooltip(hiddenStorage, root, "店铺隐藏仓库中存放的商品。", left, 394, column, 54);
+        AddSettingTooltip(containers, root, "背包、储藏箱等普通容器里的物品。\n工具箱和机器需单独勾选。", left, 394, column, 54);
+        AddSettingTooltip(machine, root, "机器内的电池、模块、原材料，\n以及工具箱内的工具。", left, 394, column, 54);
+        AddSettingTooltip(products, root, "机器输出位置的成品。\n不含电池、模块和原材料。", left, 394, column, 54);
+        AddSettingTooltip(packages, root, "将药片瓶、试纸盒等包装内的耗材\n拆成单片选货。", left, 394, column, 54);
     }
 
     void AddSettingTooltip(Button button, Transform root, string explanation, float x, float y, float width, float height)
+        => AddSettingTooltip(button.gameObject, root, explanation, x, y, width, height);
+
+    void AddSettingTooltip(GameObject target, Transform root, string explanation, float x, float y, float width, float height)
     {
         // Keep the hover text in the description area beneath the source grid.
         // Its entire graphic tree ignores raycasts, so controls stay reachable.
@@ -438,15 +482,45 @@ public sealed partial class BestOfferMod
         fill.GetComponent<Image>().raycastTarget = false;
         MakeText(tooltip.transform, 10, 6, width - 20, height - 12, explanation, 14, Ink);
         tooltip.SetActive(false);
-        var trigger = button.gameObject.AddComponent<UIEventTrigger>();
+        var trigger = target.AddComponent<UIEventTrigger>();
         void Register(EventTriggerType eventType, bool visible)
         {
             var entry = new UIEventTrigger.Entry { eventID = eventType };
-            entry.callback.AddListener((UnityAction<BaseEventData>)(_ => { if (tooltip != null) tooltip.SetActive(visible); }));
+            entry.callback.AddListener((UnityAction<BaseEventData>)(_ =>
+            {
+                if (visible)
+                {
+                    ResetSettingTooltip();
+                    if (IsOpen && tooltip != null && target != null && target.activeInHierarchy)
+                    {
+                        hoveredSettingTooltip = tooltip; hoveredSettingTarget = target;
+                        settingTooltipShowAt = Time.unscaledTime + SettingTooltipDelaySeconds;
+                    }
+                }
+                else if (hoveredSettingTooltip == tooltip) ResetSettingTooltip();
+            }));
             trigger.triggers.Add(entry);
         }
         Register(EventTriggerType.PointerEnter, true);
         Register(EventTriggerType.PointerExit, false);
+    }
+
+    void UpdateSettingTooltip()
+    {
+        if (hoveredSettingTooltip == null) return;
+        if (!IsOpen || hoveredSettingTarget == null || !hoveredSettingTarget.activeInHierarchy)
+        { ResetSettingTooltip(); return; }
+        if (!hoveredSettingTooltip.activeSelf && Time.unscaledTime >= settingTooltipShowAt)
+        {
+            hoveredSettingTooltip.transform.SetAsLastSibling();
+            hoveredSettingTooltip.SetActive(true);
+        }
+    }
+
+    void ResetSettingTooltip()
+    {
+        if (hoveredSettingTooltip != null) hoveredSettingTooltip.SetActive(false);
+        hoveredSettingTooltip = hoveredSettingTarget = null; settingTooltipShowAt = 0;
     }
 
     void MakeNumberField(Transform parent, float x, float y, float w, float h)
@@ -466,20 +540,28 @@ public sealed partial class BestOfferMod
         }));
     }
 
-    void MakeQuantityField(Transform parent, float x, float y, float w, float h, InventoryRuleGroup group, int quantity)
+    InputField MakeQuantityField(Transform parent, float x, float y, float w, float h, InventoryRuleGroup group, int quantity)
     {
-        var go = MakeBox(parent, x, y, w, h, new Color(.93f, .85f, .65f));
+        bool all = GroupSelectsAll(group);
+        var go = MakeBox(parent, x, y, w, h, all ? new Color(.70f, .69f, .65f) : new Color(.93f, .85f, .65f));
         var textObject = RectObject("Quantity", go.transform, 6, 2, w - 12, h - 4);
         var text = textObject.AddComponent<Text>(); text.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
-        text.fontSize = 16; text.color = Ink; text.alignment = TextAnchor.MiddleCenter; text.raycastTarget = false; text.supportRichText = false;
+        text.fontSize = 16; text.color = all ? new Color(.32f, .32f, .30f) : Ink; text.alignment = TextAnchor.MiddleCenter; text.raycastTarget = false; text.supportRichText = false;
         var input = go.AddComponent<InputField>(); input.textComponent = text; input.targetGraphic = go.GetComponent<Image>();
-        input.contentType = InputField.ContentType.IntegerNumber; input.characterLimit = 6; input.text = quantity.ToString(CultureInfo.InvariantCulture); input.interactable = !busy;
+        input.contentType = InputField.ContentType.IntegerNumber; input.characterLimit = 6; input.text = quantity.ToString(CultureInfo.InvariantCulture); input.interactable = !busy && !all;
+        if (all)
+        {
+            // Unity's default disabled tint is translucent and mixes the gray
+            // with the yellow panel. Keep the disabled field visibly gray.
+            var colors = input.colors; colors.disabledColor = Color.white; input.colors = colors;
+        }
         input.onEndEdit.AddListener((UnityAction<string>)(value =>
         {
-            if (value == quantity.ToString(CultureInfo.InvariantCulture)) return;
+            if (GroupSelectsAll(group) || value == quantity.ToString(CultureInfo.InvariantCulture)) return;
             if (int.TryParse(value, out int count) && count > 0) ChangeGroupQuantity(group, count);
             else { status = "数量需为正整数，已保留原数量。"; uiDirty = true; }
         }));
+        return input;
     }
 
     static GameObject RectObject(string name, Transform parent, float x, float y, float w, float h)

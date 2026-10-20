@@ -1,0 +1,22 @@
+--- a/src/WarehouseSort/BestOfferCompatibility.cs
++++ b/src/WarehouseSort/BestOfferCompatibility.cs
+@@ -5,7 +5,7 @@
+ 
+ namespace WarehouseSort;
+ 
+-/// <summary>Optional, read-only binding to the verified BestOffer 1.2.0–1.4.4 contract.</summary>
++/// <summary>Optional, read-only binding to the verified BestOffer 1.2.0–1.5.0 contract.</summary>
+ public static class BestOfferCompatibility
+ {
+     const string TypeName = "DeepSpaceBestOffer.BestOfferMod";
+@@ -26,8 +26,8 @@
+             if (assemblies.Length != 1) throw new InvalidOperationException("发现多个 BestOffer 程序集");
+             var assembly = assemblies[0];
+             var info = assembly.GetCustomAttributesData().SingleOrDefault(a => a.AttributeType.FullName == "MelonLoader.MelonInfoAttribute");
+-            if (info == null || info.ConstructorArguments.Count < 3 || info.ConstructorArguments[2].Value as string is not ("1.2.0" or "1.3.0" or "1.3.1" or "1.4.0" or "1.4.1" or "1.4.2" or "1.4.3" or "1.4.4"))
+-                throw new InvalidOperationException("BestOffer 版本未经兼容验证（支持 1.2.0 / 1.3.0 / 1.3.1 / 1.4.0 / 1.4.1 / 1.4.2 / 1.4.3 / 1.4.4）");
++            if (info == null || info.ConstructorArguments.Count < 3 || info.ConstructorArguments[2].Value as string is not ("1.2.0" or "1.3.0" or "1.3.1" or "1.4.0" or "1.4.1" or "1.4.2" or "1.4.3" or "1.4.4" or "1.5.0"))
++                throw new InvalidOperationException("BestOffer 版本未经兼容验证（支持 1.2.0 / 1.3.0 / 1.3.1 / 1.4.0 / 1.4.1 / 1.4.2 / 1.4.3 / 1.4.4 / 1.5.0）");
+             var type = assembly.GetType(TypeName, true)!;
+             var current = type.GetField("Current", BindingFlags.Public | BindingFlags.Static);
+             var open = type.GetProperty("IsOpen", BindingFlags.Public | BindingFlags.Instance);

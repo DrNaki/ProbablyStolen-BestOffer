@@ -42,7 +42,38 @@ public sealed partial class BestOfferMod
     // A quantity chosen inside one box belongs to that box, even when another
     // package contains medicine with the same display name.
     static string GroupStateKey(InventoryRuleGroup group) =>
-        (group.Items.FirstOrDefault()?.ParentKey ?? "") + "\u001f" + group.Name;
+        ItemRuleGroupLogic.GroupKey(group.Items.FirstOrDefault()?.ParentKey ?? "", group.Name,
+            group.Items.FirstOrDefault()?.Key ?? "");
+
+    bool GroupSelectsAll(InventoryRuleGroup group) => allGroupRules.ContainsKey(GroupStateKey(group));
+
+    IEnumerable<InventoryRuleMember> CurrentRuleMembers =>
+        snapshot?.RuleMembers.Values ?? Enumerable.Empty<InventoryRuleMember>();
+
+    void AllGroupRuleChanged()
+    { revision++; plans.Clear(); showConfirm = false; SaveRules(); uiDirty = true; }
+
+    void ToggleGroupAllFromUI(InventoryRuleGroup group)
+    {
+        string key = GroupStateKey(group);
+        int mode = CurrentGroupModeFromUI(group);
+        if (GroupSelectsAll(group))
+        {
+            ItemRuleGroupLogic.DisableAll(rules, allGroupRules, key, CurrentRuleMembers);
+            groupQuantities[key] = group.Count;
+            status = $"「{group.Name}」已取消全部，数量保留为当前最大值 {group.Count}，现在可编辑。";
+        }
+        else
+        {
+            if (mode == 0) allGroupRules[key] = 0;
+            else ItemRuleGroupLogic.SetAllRule(rules, allGroupRules, key, CurrentRuleMembers, mode);
+            groupQuantities.Remove(key);
+            status = $"「{group.Name}」已勾选全部，数量随库存变化；" +
+                (mode == 0 ? "请选择必卖或禁卖。" : $"今后新增的同名商品也会{(mode == 1 ? "必卖" : "禁卖")}。" + RuleNextStep());
+        }
+        if (mode != 0) groupModes[key] = mode;
+        AllGroupRuleChanged();
+    }
 
     void SetGroupRule(InventoryRuleGroup group, int rule, int count)
     {
