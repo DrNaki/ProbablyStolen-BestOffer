@@ -1,0 +1,6 @@
+<Project>
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)..\src\BestOffer\Localization.cs" Link="Localization.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)..\src\BestOffer\LocalizationCatalog.cs" Link="LocalizationCatalog.cs" />
+  </ItemGroup>
+</Project>

@@ -27,7 +27,7 @@ public sealed partial class BestOfferMod
         atlas.TryGetValue(icon.Sprite, out var result);
         if (result != null) result = FitCategorySprite(result);
         categoryIconSprites[category] = result;
-        if (result == null) LoggerInstance.Warning($"未找到分类图标：{category} / {icon.Atlas} / {icon.Sprite}");
+        if (result == null) LoggerInstance.Warning(L.F($"未找到分类图标：{category} / {icon.Atlas} / {icon.Sprite}"));
         return result;
     }
 
@@ -57,7 +57,7 @@ public sealed partial class BestOfferMod
         }
         catch (Exception e)
         {
-            LoggerInstance.Warning($"分类图标对齐失败，保留原图：{source.name} / {e.Message}");
+            LoggerInstance.Warning(L.F($"分类图标对齐失败，保留原图：{source.name} / {e.Message}"));
             return source;
         }
     }
@@ -79,18 +79,18 @@ public sealed partial class BestOfferMod
 
     void BuildCategoryRulesPage(Transform root)
     {
-        MakeText(root, 48, 188, 1024, 26, "分类规则优先于库存规则；多个分类冲突时禁卖优先。", 14, Ink);
+        MakeText(root, 48, 188, 1024, 26, L.T("分类规则优先于库存规则；多个分类冲突时禁卖优先。"), 14, Ink);
         if (CurrentCategoryScope() == null)
-        { MakeText(root, 48, 260, 1024, 60, "请进入店铺后设置分类规则。", 18, Muted); return; }
+        { MakeText(root, 48, 260, 1024, 60, L.T("请进入店铺后设置分类规则。"), 18, Muted); return; }
         int day = CategoryClock().Day;
         var all = NativeCategoryPolicy.Categories();
         var risks = all.Where(c => c.HasDemandException).ToArray();
         for (int n = 0; n < risks.Length; n++) BuildRiskCategory(root, 48 + n * 524, 224, risks[n], day);
 
-        MakeText(root, 48, 316, 700, 25, "商品分类", 18, Ink);
+        MakeText(root, 48, 316, 700, 25, L.T("商品分类"), 18, Ink);
         var selected = all.FirstOrDefault(c => !c.HasDemandException && c.Id == selectedCategoryId);
         int mode = selected == null ? 0 : GetCategoryRule(selected.Id).EffectiveMode(day);
-        var selector = MakeButton(root, 48, 347, 1024, 58, selected?.Name ?? "选择商品分类", () =>
+        var selector = MakeButton(root, 48, 347, 1024, 58, selected?.Name ?? L.T("选择商品分类"), () =>
         { categoryPickerOpen = !categoryPickerOpen; }, CategoryColor(mode), !busy);
         selector.gameObject.name = "CategorySelector";
         var label = selector.GetComponentInChildren<TMP_Text>();
@@ -101,7 +101,7 @@ public sealed partial class BestOfferMod
         MakeText(selector.transform, 970, 12, 40, 34, categoryPickerOpen ? "▲" : "▼", 18, Paper, TextAlignmentOptions.Center);
 
         if (selected == null)
-            MakeText(root, 72, 444, 976, 100, "从上方选择需要设置的商品分类。", 18, Muted, TextAlignmentOptions.Center);
+            MakeText(root, 72, 444, 976, 100, L.T("从上方选择需要设置的商品分类。"), 18, Muted, TextAlignmentOptions.Center);
         else BuildSelectedCategory(root, selected, day);
     }
 
@@ -113,10 +113,10 @@ public sealed partial class BestOfferMod
         int mode = rule.EffectiveMode(day);
         bool exception = mode == 2 && rule.AllowDemandException;
         MakeText(root, x + 16, y + 27, 216, 28, category.Name, 19, mode == 0 ? Ink : CategoryColor(mode));
-        MakeButton(root, x + 248, y + 25, 110, 32, mode == 1 ? "✓ 必卖" : "必卖", () => ToggleCategoryMode(category, 1), mode == 1 ? Green : Muted, !busy);
-        var forbidden = MakeButton(root, x + 370, y + 25, 114, 32, exception ? "✓ 需求例外" : mode == 2 ? "✓ 禁卖" : "禁卖",
+        MakeButton(root, x + 248, y + 25, 110, 32, mode == 1 ? L.T("✓ 必卖") : L.T("必卖"), () => ToggleCategoryMode(category, 1), mode == 1 ? Green : Muted, !busy);
+        var forbidden = MakeButton(root, x + 370, y + 25, 114, 32, exception ? L.T("✓ 需求例外") : mode == 2 ? L.T("✓ 禁卖") : L.T("禁卖"),
             () => CycleCategoryForbidden(category), mode == 2 ? Rust : Muted, !busy);
-        AddSettingTooltip(forbidden, root, "点击切换：关闭 → 禁卖 → 需求例外 → 关闭。\n需求例外：仅放行买家明确所需商品，仍遵循库存与拒收规则。", x + 16, y + 60, 468, 45);
+        AddSettingTooltip(forbidden, root, L.T("点击切换：关闭 → 禁卖 → 需求例外 → 关闭。\n需求例外：仅放行买家明确所需商品，仍遵循库存与拒收规则。"), x + 16, y + 60, 468, 45);
     }
 
     void BuildSelectedCategory(Transform root, TradeCategory category, int day)
@@ -126,14 +126,14 @@ public sealed partial class BestOfferMod
         var editor = MakeBox(root, 48, 425, 1024, 135, Line);
         editor.name = "CategoryRuleEditor";
         MakeBox(root, 49, 426, 1022, 133, new Color(.88f, .81f, .60f));
-        MakeText(root, 72, 446, 180, 26, "售卖规则", 16, Ink);
-        MakeButton(root, 280, 440, 136, 34, mode == 1 ? "✓ 必卖" : "必卖", () => ToggleCategoryMode(category, 1), mode == 1 ? Green : Muted, !busy);
-        MakeButton(root, 432, 440, 136, 34, mode == 2 ? "✓ 禁卖" : "禁卖", () => ToggleCategoryMode(category, 2), mode == 2 ? Rust : Muted, !busy);
-        MakeText(root, 600, 446, 448, 26, mode == 0 ? rule.IsExpired(day) ? "已到期 · 恢复库存规则" : "遵循库存规则" :
-            mode == 1 ? "整类必卖（含新增商品）" : "整类禁卖（含新增商品）", 13, Muted);
+        MakeText(root, 72, 446, 180, 26, L.T("售卖规则"), 16, Ink);
+        MakeButton(root, 280, 440, 136, 34, mode == 1 ? L.T("✓ 必卖") : L.T("必卖"), () => ToggleCategoryMode(category, 1), mode == 1 ? Green : Muted, !busy);
+        MakeButton(root, 432, 440, 136, 34, mode == 2 ? L.T("✓ 禁卖") : L.T("禁卖"), () => ToggleCategoryMode(category, 2), mode == 2 ? Rust : Muted, !busy);
+        MakeText(root, 600, 446, 448, 26, mode == 0 ? rule.IsExpired(day) ? L.T("已到期 · 恢复库存规则") : L.T("遵循库存规则") :
+            mode == 1 ? L.T("整类必卖（含新增商品）") : L.T("整类禁卖（含新增商品）"), 13, Muted);
         MakeBox(root, 72, 490, 976, 1, Line);
-        MakeText(root, 72, 514, 180, 26, "生效期限", 16, Ink);
-        var period = MakeButton(root, 280, 508, 136, 34, rule.Limited ? "✓ 启用" : "启用",
+        MakeText(root, 72, 514, 180, 26, L.T("生效期限"), 16, Ink);
+        var period = MakeButton(root, 280, 508, 136, 34, rule.Limited ? L.T("✓ 启用") : L.T("启用"),
             () => ToggleCategoryPeriod(category), rule.Limited ? Green : Muted, !busy);
         period.gameObject.name = "CategoryPeriod";
         var expiry = MakeText(root, rule.Limited ? 672 : 440, 514, rule.Limited ? 376 : 608, 26,
@@ -144,9 +144,9 @@ public sealed partial class BestOfferMod
             MakeButton(root, 440, 508, 30, 34, "−", () => ChangeCategoryPeriodDays(category, -1), Muted, !busy && days > 1);
             MakeCategoryDayField(root, 478, 508, 82, 34, category, rule, expiry);
             MakeButton(root, 568, 508, 30, 34, "+", () => ChangeCategoryPeriodDays(category, 1), Muted, !busy && days < CategoryRuleLogic.MaxDurationDays);
-            MakeText(root, 610, 514, 50, 26, "天", 14, Ink);
+            MakeText(root, 610, 514, 50, 26, L.T("天"), 14, Ink);
         }
-        AddSettingTooltip(period, root, "剩余天数含今天，修改后从今天重新计时。\n到期恢复库存规则，并在夜间报告末尾提醒。", 280, 546, 760, 45);
+        AddSettingTooltip(period, root, L.T("剩余天数含今天，修改后从今天重新计时。\n到期恢复库存规则，并在夜间报告末尾提醒。"), 280, 546, 760, 45);
     }
 
     void SelectCategory(string id)
@@ -163,8 +163,8 @@ public sealed partial class BestOfferMod
         outside.transition = Selectable.Transition.None;
         MakeBox(root, 48, 184, 1024, 444, Line);
         MakeBox(root, 50, 186, 1020, 440, Paper);
-        MakeText(root, 64, 194, 400, 28, "选择商品分类", 20, Ink);
-        string[] states = { "未设置", "必卖", "禁卖" };
+        MakeText(root, 64, 194, 400, 28, L.T("选择商品分类"), 20, Ink);
+        string[] states = { L.T("未设置"), L.T("必卖"), L.T("禁卖") };
         for (int n = 0; n < states.Length; n++)
         {
             float x = 638 + n * 114;
@@ -175,7 +175,9 @@ public sealed partial class BestOfferMod
 
         var categories = NativeCategoryPolicy.Categories().Where(c => !c.HasDemandException).ToArray();
         int day = CategoryClock().Day;
-        const int columns = 6;
+        int columns = L.Chinese ? 6 : 4;
+        float columnWidth = L.Chinese ? 167 : 250;
+        float tileWidth = L.Chinese ? 155 : 238;
         var viewport = RectObject("CategoryGrid", root, 64, 234, 994, 388);
         viewport.AddComponent<RectMask2D>();
         float height = Math.Max(388, (categories.Length + columns - 1) / columns * 39 - 3);
@@ -183,15 +185,15 @@ public sealed partial class BestOfferMod
         for (int n = 0; n < categories.Length; n++)
         {
             var category = categories[n];
-            float x = n % columns * 167, y = n / columns * 39;
+            float x = n % columns * columnWidth, y = n / columns * 39;
             int mode = GetCategoryRule(category.Id).EffectiveMode(day);
-            if (selectedCategoryId == category.Id) MakeBox(content.transform, x, y, 159, 36, new Color(.99f, .94f, .77f));
-            var tile = MakeButton(content.transform, x + 2, y + 2, 155, 32, category.Name, () => SelectCategory(category.Id), CategoryColor(mode), !busy);
+            if (selectedCategoryId == category.Id) MakeBox(content.transform, x, y, tileWidth + 4, 36, new Color(.99f, .94f, .77f));
+            var tile = MakeButton(content.transform, x + 2, y + 2, tileWidth, 32, category.Name, () => SelectCategory(category.Id), CategoryColor(mode), !busy);
             tile.gameObject.name = "CategoryTile:" + category.Id;
             var image = tile.GetComponent<Image>(); image.sprite = null; image.type = Image.Type.Simple;
             var label = tile.GetComponentInChildren<TMP_Text>();
             label.alignment = TextAlignmentOptions.Left; label.enableWordWrapping = false;
-            var rect = label.GetComponent<RectTransform>(); rect.anchoredPosition = new Vector2(38, -2); rect.sizeDelta = new Vector2(112, 28);
+            var rect = label.GetComponent<RectTransform>(); rect.anchoredPosition = new Vector2(38, -2); rect.sizeDelta = new Vector2(tileWidth - 43, 28);
             MakeCategoryIcon(tile.transform, 4, 2, 28, category.Id);
         }
         var scroll = viewport.AddComponent<ScrollRect>();

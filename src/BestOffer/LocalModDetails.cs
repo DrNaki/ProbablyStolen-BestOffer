@@ -6,7 +6,7 @@ namespace DeepSpaceModSupport;
 
 internal static class LocalModDetails
 {
-    internal static void Register(string builtInName, string nameZh, string nameEn, string summaryZh, string summaryEn)
+    internal static void Register(string builtInName, string nameZh, string nameEn, string summaryZh, string summaryEn, bool chinese = true)
     {
         try
         {
@@ -17,7 +17,7 @@ internal static class LocalModDetails
             cache[builtInName.Trim().ToUpperInvariant()] = JsonSerializer.SerializeToElement(new
             {
                 BuiltInName = builtInName, NameZh = nameZh, NameEn = nameEn,
-                SummaryZh = summaryZh, SummaryEn = summaryEn, Link = "", LocalizedSummary = summaryZh
+                SummaryZh = summaryZh, SummaryEn = summaryEn, Link = "", LocalizedSummary = chinese ? summaryZh : summaryEn
             });
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";

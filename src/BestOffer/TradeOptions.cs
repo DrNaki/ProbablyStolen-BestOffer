@@ -45,10 +45,10 @@ public sealed class TradeOptions
     {
         limit = budget;
         error = "";
-        if (budget < 0) { error = "买家预算无效。"; return false; }
+        if (budget < 0) { error = L.T("买家预算无效。"); return false; }
         if (!AllowOverBudget) return true;
         if (!Enum.IsDefined(typeof(OverBudgetMode), OverBudgetMode) || OverBudgetValue < 0)
-        { error = "允许超出的数值必须为非负数，且单位有效。"; return false; }
+        { error = L.T("允许超出的数值必须为非负数，且单位有效。"); return false; }
         try
         {
             decimal extra = OverBudgetMode == OverBudgetMode.Percent
@@ -57,10 +57,10 @@ public sealed class TradeOptions
             // Game currency is integral. Round the allowance down so a fractional
             // percentage can never authorize more unpaid value than the user set.
             decimal ceiling = checked((decimal)budget + decimal.Floor(extra));
-            if (ceiling > long.MaxValue) { error = "允许超出的数值过大，请调小。"; return false; }
+            if (ceiling > long.MaxValue) { error = L.T("允许超出的数值过大，请调小。"); return false; }
             limit = (long)ceiling;
             return true;
         }
-        catch (OverflowException) { error = "允许超出的数值过大，请调小。"; return false; }
+        catch (OverflowException) { error = L.T("允许超出的数值过大，请调小。"); return false; }
     }
 }

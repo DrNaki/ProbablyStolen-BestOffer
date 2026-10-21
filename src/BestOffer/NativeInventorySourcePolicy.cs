@@ -56,7 +56,7 @@ public static class NativeInventorySourcePolicy
             {
                 var owner = inventory.GetParentItem();
                 if (owner == null) return "";
-                if (!seen.Add(owner.Pointer)) return "容器关联异常，无法安全取出";
+                if (!seen.Add(owner.Pointer)) return L.T("容器关联异常，无法安全取出");
                 var kind = GetContentsKind(owner, inventory);
                 // The moisture farm's bottle is the output receptacle. An empty
                 // bottle is equipment waiting for production, not a water product.
@@ -68,9 +68,9 @@ public static class NativeInventorySourcePolicy
                     return InventorySourcePolicy.ProtectedReason(kind);
                 current = owner;
             }
-            return "物品不在可访问库存中";
+            return L.T("物品不在可访问库存中");
         }
-        catch (Exception) { return "无法可靠读取物品货源层级"; }
+        catch (Exception) { return L.T("无法可靠读取物品货源层级"); }
     }
 
     public static bool ProtectsToolboxContents(IEnumerable<GameItem> contents, bool includeMachineContents)

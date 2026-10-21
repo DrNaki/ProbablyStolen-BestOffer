@@ -12,7 +12,7 @@ $utf8 = New-Object Text.UTF8Encoding($false)
 $projectDir = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $gameRoot = [IO.Path]::GetFullPath($GameDir).TrimEnd('\')
 $knownReleases = [ordered]@{
-    '1.4.4' = 'EA1CD24B48EDACC889D45FCB700998BE4FCE86F36572DF688B9AF2F83C7B266F'
+    '1.5.0' = '35E16673CFF5F2A8E8223122A79612F96D66AAF1A79EC59C2457CE5FF77B8799'
 }
 
 function Get-Sha([string]$Path) {
@@ -49,13 +49,13 @@ foreach ($process in @(Get-Process -Name 'Probably Stolen' -ErrorAction Silently
     }
 }
 if (!$ReleaseZip) {
-    foreach ($relative in @('rollback\BestOffer-1.4.4.zip', 'release\BestOffer-1.4.4.zip')) {
+    foreach ($relative in @('rollback\BestOffer-1.5.0.zip', 'release\BestOffer-1.5.0.zip')) {
         $candidate = Join-Path $projectDir $relative
         if (Test-Path -LiteralPath $candidate -PathType Leaf) { $ReleaseZip = $candidate; break }
     }
 }
 if (!$ReleaseZip -or !(Test-Path -LiteralPath $ReleaseZip -PathType Leaf)) {
-    throw '未找到回滚发布包。默认需要 rollback 或 release 文件夹内的 BestOffer-1.4.4.zip；回退其他已备份版本时须同时指定 -ReleaseZip 和可信的 -ExpectedSha256。'
+    throw '未找到回滚发布包。默认需要 rollback 或 release 文件夹内的 BestOffer-1.5.0.zip；回退其他已备份版本时须同时指定 -ReleaseZip 和可信的 -ExpectedSha256。'
 }
 $ReleaseZip = [IO.Path]::GetFullPath($ReleaseZip)
 $archiveHash = Get-Sha $ReleaseZip
@@ -70,7 +70,7 @@ foreach ($knownVersion in $knownReleases.Keys) {
 if ($ExpectedSha256) {
     if ($archiveHash -ne $ExpectedSha256) { throw '旧发布包与 -ExpectedSha256 不符，未回退。' }
 } elseif ($targetVersion -eq 'specified-release') {
-    throw '该 ZIP 不是已验收的 1.4.4 发布包。回退其他已备份版本时必须提供可信的 -ExpectedSha256。'
+    throw '该 ZIP 不是已验收的 1.5.0 发布包。回退其他已备份版本时必须提供可信的 -ExpectedSha256。'
 }
 $manifestPath = Get-GamePath 'UserData\BestOfferInstaller\install-manifest.json'
 if (!(Test-Path -LiteralPath $manifestPath -PathType Leaf)) {

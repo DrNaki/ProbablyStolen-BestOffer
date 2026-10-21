@@ -29,10 +29,10 @@ public static class InventorySourcePolicy
 
     public static string ProtectedReason(InventoryContentKind kind) => kind switch
     {
-        InventoryContentKind.StorageContent => "未启用储藏箱内容货源",
-        InventoryContentKind.MachineContent => "未启用机器内容货源",
-        InventoryContentKind.MachineProduct => "未启用机器产物货源",
-        InventoryContentKind.RetailPackageContent => "整盒／整瓶出售：未启用拆售",
-        _ => "装配部件不作为独立货源"
+        InventoryContentKind.StorageContent => L.T("未启用储藏箱内容货源"),
+        InventoryContentKind.MachineContent => L.T("未启用机器内容货源"),
+        InventoryContentKind.MachineProduct => L.T("未启用机器产物货源"),
+        InventoryContentKind.RetailPackageContent => L.T("整盒／整瓶出售：未启用拆售"),
+        _ => L.T("装配部件不作为独立货源")
     };
 }

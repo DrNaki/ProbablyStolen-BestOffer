@@ -1,7 +1,7 @@
 ﻿[CmdletBinding()]
 param(
     [string]$GameDir = 'E:\Steam\steamapps\common\Probably Stolen Demo',
-    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '1.5.0'
+    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '1.6.0'
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -14,7 +14,7 @@ $utf8 = New-Object Text.UTF8Encoding($false)
 $zipNameEncoding = [Text.Encoding]::UTF8
 $loaderManifestPath = Join-Path $projectDir 'tools\melonloader\v0.7.3-files.json'
 $expectedLoaderManifestHash = '5D0D5CEFAA2F7C5D4F652254B1710427E34007B9171038860E2C278C92C256F5'
-$knownRollbackHash = 'EA1CD24B48EDACC889D45FCB700998BE4FCE86F36572DF688B9AF2F83C7B266F'
+$knownRollbackHash = '35E16673CFF5F2A8E8223122A79612F96D66AAF1A79EC59C2457CE5FF77B8799'
 
 function Get-Sha([string]$Path) {
     $algorithm = [Security.Cryptography.SHA256]::Create()
@@ -49,14 +49,14 @@ $null = Get-SafeSource 'README.md'
 $null = Get-SafeSource 'THIRD-PARTY-NOTICES.md'
 $null = Get-SafeSource 'tools/melonloader/v0.7.3-files.json'
 $rollbackSourceRelative = ''
-foreach ($candidate in @('rollback/BestOffer-1.4.4.zip', 'release/BestOffer-1.4.4.zip')) {
+foreach ($candidate in @('rollback/BestOffer-1.5.0.zip', 'release/BestOffer-1.5.0.zip')) {
     if (Test-Path -LiteralPath (Join-Path $projectDir $candidate) -PathType Leaf) {
         $rollbackSourceRelative = $candidate
         break
     }
 }
 if (!$rollbackSourceRelative -or (Get-Sha (Get-SafeSource $rollbackSourceRelative)) -ne $knownRollbackHash) {
-    throw '缺少经过固定 SHA256 验证的 1.4.4 基线发布包，不能生成可回退的新版本。'
+    throw '缺少经过固定 SHA256 验证的 1.5.0 基线发布包，不能生成可回退的新版本。'
 }
 if ((Get-Sha $loaderManifestPath) -ne $expectedLoaderManifestHash) {
     throw 'MelonLoader 原包文件清单校验失败，拒绝把未核验的加载器文件放入发布包。'
@@ -67,7 +67,7 @@ if ($loaderManifest.Version -ne '0.7.3' -or $loaderManifest.SourceSha256 -ne
     throw 'MelonLoader 来源清单与指定官方版本不一致。'
 }
 $docRoot = Join-Path $projectDir 'docs'
-$publicDocuments = @('1.4.1-使用说明.md', '1.4.1-风险策略依据.md', '1.4.1-验收记录.md', '1.5.0-更新说明.md')
+$publicDocuments = @('1.6.0-更新说明.md', '1.6.0-验收记录.md')
 $documents = @($publicDocuments | ForEach-Object { Get-Item -LiteralPath (Get-SafeSource ('docs/' + $_)) })
 if ($documents.Count -eq 0) { throw 'docs 尚无最终文档；请完成文档后再打包。' }
 $allowedDocExtensions = @('.md', '.txt', '.pdf', '.html', '.css', '.png', '.jpg', '.jpeg', '.svg', '.webp')
@@ -100,8 +100,9 @@ function Add-Payload([string]$Relative, [string]$SourceRelative = '') {
     $payload.Add($name, (Get-SafeSource $SourceRelative))
 }
 Add-Payload 'README.md'
+Add-Payload 'README.en.md'
 Add-Payload 'THIRD-PARTY-NOTICES.md'
-Add-Payload 'compat/WarehouseSort-1.5.0.patch'
+Add-Payload 'compat/WarehouseSort-1.6.0.patch'
 Add-Payload 'media/v1.4.3/one-click-trade.gif'
 Add-Payload 'media/v1.4.3/05-trade-settings.png'
 Add-Payload 'media/v1.5.0/category-rules.png'
@@ -110,6 +111,9 @@ Add-Payload 'dist/BestOffer.dll'
 Add-Payload 'dist/BestOffer.pdb'
 Add-Payload 'tests/OfferSolver.Tests.csproj'
 Add-Payload 'tests/Program.cs'
+Add-Payload 'tests/Directory.Build.props'
+Add-Payload 'tests/Localization.Tests/Localization.Tests.csproj'
+Add-Payload 'tests/Localization.Tests/Program.cs'
 Add-Payload 'tests/Rollback.Tests.ps1'
 Add-Payload 'tests/ManagerInstaller.Tests.ps1'
 Add-Payload 'tests/KeyChord.Tests/KeyChord.Tests.csproj'
@@ -124,7 +128,8 @@ Add-Payload 'tests/InventorySourcePolicy.Tests/InventorySourcePolicy.Tests.cspro
 Add-Payload 'tests/InventorySourcePolicy.Tests/Program.cs'
 Add-Payload 'tests/InventorySourcePolicy.Tests/NativeFixtures.cs'
 foreach ($name in @('Build', 'Install', 'Uninstall', 'Package', 'Rollback')) { Add-Payload ('scripts/' + $name + '.ps1') }
-Add-Payload 'rollback/BestOffer-1.4.4.zip' $rollbackSourceRelative
+Add-Payload 'scripts/PackageNexus.py'
+Add-Payload 'rollback/BestOffer-1.5.0.zip' $rollbackSourceRelative
 foreach ($source in @(Get-ChildItem -LiteralPath (Join-Path $projectDir 'src\BestOffer') -File)) {
     if (@('.cs', '.csproj') -contains $source.Extension.ToLowerInvariant()) {
         Add-Payload ('src/BestOffer/' + $source.Name)

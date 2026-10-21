@@ -12,7 +12,10 @@ public sealed class TradeItem
     public string Key { get; set; } = "";
     public string Group { get; set; } = "";
     public string Name { get; set; } = "";
+    // Canonical 1.5.0 Chinese grouping name; independent of the UI language.
+    public string RuleName { get; set; } = "";
     public string Source { get; set; } = "";
+    public bool OnTradeTable { get; set; }
     public long Price { get; set; }
     public bool PriceKnown { get; set; }
     public bool RiskBlocked { get; set; }
@@ -75,23 +78,24 @@ public sealed class GameTradeAdapter
         var result = new TradeSnapshot { Options = (options ?? new TradeOptions()).Clone() };
         try
         {
+            using var textScope = NativeLocalization.UseModLanguage();
             var store = PlayerStore.Instance;
             var entry = EmporiumEntry.Instance;
             var client = store?.currentClientInstance?.GetClientBlueprint();
-            if (store == null || entry == null) return Unavailable(result, "请进入店铺后设置库存规则。");
+            if (store == null || entry == null) return Unavailable(result, L.T("请进入店铺后设置库存规则。"));
             var marketEvents = ReadMarketEvents();
             result.MarketDay = StoreStation.Instance?.dayCounter ?? 0;
             result.MarketSignature = MarketSignature(marketEvents, result.MarketDay);
             var marketTypes = marketEvents.SelectMany(ev => ev.negociationDatas?.ToArray() ?? Array.Empty<NegociationData>()).Where(data => data != null).ToArray();
-            result.MarketSummary = $"第 {result.MarketDay} 天  ·  打折 {marketTypes.Where(d => d.value < 0).Select(d => d.itemType).Distinct().Count()} 类 / 加价 {marketTypes.Where(d => d.value > 0).Select(d => d.itemType).Distinct().Count()} 类";
+            result.MarketSummary = L.F($"第 {result.MarketDay} 天  ·  打折 {marketTypes.Where(d => d.value < 0).Select(d => d.itemType).Distinct().Count()} 类 / 加价 {marketTypes.Where(d => d.value > 0).Select(d => d.itemType).Distinct().Count()} 类");
             var unavailableReason = "";
-        if (store == null || client == null) unavailableReason = "等待买家到来；现在可以设置售卖规则。";
+        if (store == null || client == null) unavailableReason = L.T("等待买家到来；现在可以设置售卖规则。");
             else
             {
                 result.ClientKey = ClientKey(client);
-                result.ClientName = client.displayName ?? "买家";
+                result.ClientName = NativeLocalization.ClientName(client);
                 result.Budget = client.useClientBudget ? client.GetBudget() : int.MaxValue;
-                if (result.Budget < 0) unavailableReason = "买家预算异常；库存规则仍可设置。";
+                if (result.Budget < 0) unavailableReason = L.T("买家预算异常；库存规则仍可设置。");
                 else if (!result.Options.TryGetSelectionBudget(result.Budget, out var selectionBudget, out var optionError))
                     unavailableReason = optionError;
                 else result.SelectionBudget = selectionBudget;
@@ -99,10 +103,10 @@ public sealed class GameTradeAdapter
                 result.BuyerRefusesRiskyGoods = client.noAcceptingContraband;
                 result.MaxItems = client.isMultiBuyDisabled ? 1 : int.MaxValue;
                 if (!client.IsClientBuying() || client.isBusinessComplete || client.isRegularSellDisable)
-                    unavailableReason = "这位顾客当前不接受普通商品出售；库存规则仍可设置。";
-                else if (entry.backInvinvElement == null) unavailableReason = "交易台尚未准备好；库存规则仍可设置。";
+                    unavailableReason = L.T("这位顾客当前不接受普通商品出售；库存规则仍可设置。");
+                else if (entry.backInvinvElement == null) unavailableReason = L.T("交易台尚未准备好；库存规则仍可设置。");
                 else if (store.lockAllFlag > 0 || store.lockAllInventoryFlag > 0 || store.isClientBeingArrested || store.isHandlingShootout)
-                    unavailableReason = "请等待当前对话或事件结束后再报价；库存规则仍可设置。";
+                    unavailableReason = L.T("请等待当前对话或事件结束后再报价；库存规则仍可设置。");
             }
             result.CanTrade = unavailableReason.Length == 0;
 
@@ -111,17 +115,17 @@ public sealed class GameTradeAdapter
             var containedKeys = new HashSet<string>(StringComparer.Ordinal);
             var descendantsCache = new Dictionary<IntPtr, List<GameItem>>();
             var removalCache = new Dictionary<IntPtr, string>();
-            AddInventory(entry.invElement, "库存");
-            AddInventory(entry.backInvinvElement, "交易台");
-            AddInventory(entry.backInvinvElementCounter, "柜台");
-            if (result.Options.IncludeShowcase) AddInventory(entry.showcaseElement, "展示柜");
-            if (result.Options.IncludeHiddenStorage) AddInventory(entry.hiddenElement, "隐藏仓库");
+            AddInventory(entry.invElement, L.T("库存"));
+            AddInventory(entry.backInvinvElement, L.T("交易台"));
+            AddInventory(entry.backInvinvElementCounter, L.T("柜台"));
+            if (result.Options.IncludeShowcase) AddInventory(entry.showcaseElement, L.T("展示柜"));
+            if (result.Options.IncludeHiddenStorage) AddInventory(entry.hiddenElement, L.T("隐藏仓库"));
             // Some storage interfaces expose the same physical object through
             // another inventory root. A movable container and its contents must
             // never both become independent choices in the solver.
             result.Items.RemoveAll(row => containedKeys.Contains(row.Key) && !row.RuleOnly);
-            result.Message = !result.CanTrade ? unavailableReason : result.Items.Count == 0 ? "没有可供筛选的自有物品。" :
-                "已按货源与当天行情筛选；机器内容默认保留，包装默认整件报价。";
+            result.Message = !result.CanTrade ? unavailableReason : result.Items.Count == 0 ? L.T("没有可供筛选的自有物品。") :
+                L.T("已按货源与当天行情筛选；机器内容默认保留，包装默认整件报价。");
             return result;
 
             void AddInventory(GameInventory? inventory, string source)
@@ -144,12 +148,13 @@ public sealed class GameTradeAdapter
                     return;
                 }
                 var row = new TradeItem { Key = key, Group = item.identifier ?? "", Source = source, Native = item,
+                    RuleName = result.RuleMembers[key].Name, OnTradeTable = Same(item.parentInventory, entry.backInvinvElement),
                     ParentKey = parentKey, UnitCount = item.unitCount };
                 var expanded = false;
                 var directChildren = new List<GameItem>();
                 try
                 {
-                    row.Name = item.GetDisplayName(false) ?? item.name ?? item.identifier ?? "物品";
+                    row.Name = NativeLocalization.ItemName(item);
                     var removalReason = GetRemovalReason(item);
                     if (removalReason.Length == 0) removalReason = NativeInventorySourcePolicy.BoundaryReason(item, result.Options);
                     var descendants = GetDescendants(item);
@@ -177,14 +182,14 @@ public sealed class GameTradeAdapter
                         }
                         expanded = anyExtractable;
                     }
-                    if (expanded) row.Reason = row.IsRetailPackage ? "已选择拆售包装内容，本体不参与出售" : "已展开允许的内容，本体不参与整件出售";
+                    if (expanded) row.Reason = row.IsRetailPackage ? L.T("已选择拆售包装内容，本体不参与出售") : L.T("已展开允许的内容，本体不参与整件出售");
                     else if (removalReason.Length > 0) row.Reason = removalReason;
                     else if (NativeInventorySourcePolicy.ProtectsToolboxContents(descendants, result.Options.IncludeMachineContents))
-                        row.Reason = "未启用机器货源：保留工具箱内的工具";
-                    else if (!result.CanTrade) row.Reason = "等待交易";
-                    else if (!client!.IsClientBuyingThisItem(item)) row.Reason = "买家不收此物品";
-                    else if (client.isRequireVariety && client.IsItemInVarietyList(item)) row.Reason = "买家已经买过同种物品";
-                    else if (client.CanClientExposeAnyFeature(item)) row.Reason = "需要先完成买家的物品鉴定";
+                        row.Reason = L.T("未启用机器货源：保留工具箱内的工具");
+                    else if (!result.CanTrade) row.Reason = L.T("等待交易");
+                    else if (!client!.IsClientBuyingThisItem(item)) row.Reason = L.T("买家不收此物品");
+                    else if (client.isRequireVariety && client.IsItemInVarietyList(item)) row.Reason = L.T("买家已经买过同种物品");
+                    else if (client.CanClientExposeAnyFeature(item)) row.Reason = L.T("需要先完成买家的物品鉴定");
                     if (!expanded && removalReason.Length == 0)
                     {
                         row.DescendantKeys = descendants.Select(RegisterIdentity).Distinct(StringComparer.Ordinal).OrderBy(k => k, StringComparer.Ordinal).ToList();
@@ -196,7 +201,7 @@ public sealed class GameTradeAdapter
                     row.RiskBlocked = IsRiskBlocked(item, result.Options, riskClient) ||
                         (!expanded && removalReason.Length == 0 && descendants.Any(child => IsRiskBlocked(child, result.Options, riskClient)));
                     if (row.RiskBlocked) row.Reason = result.BuyerRefusesRiskyGoods
-                        ? "买家拒收违禁品或赃物" : "自动禁卖保护";
+                        ? L.T("买家拒收违禁品或赃物") : L.T("自动禁卖保护");
                     var marketFacts = MarketFacts(item, marketEvents);
                     row.MarketDiscounted = marketFacts.Discounted;
                     row.MarketMarkedUp = marketFacts.MarkedUp;
@@ -208,18 +213,18 @@ public sealed class GameTradeAdapter
                             row.MarketMarkedUp |= facts.MarkedUp;
                         }
                     if (result.Options.BlockMarketDiscounts && row.MarketDiscounted && !expanded && row.Reason.Length == 0)
-                        row.Reason = "当天事件打折：已按交易设置保留";
+                        row.Reason = L.T("当天事件打折：已按交易设置保留");
                     if (result.CanTrade)
                     {
                         row.Price = Quote(item, store!, client!, entry, marketEvents);
                         row.PriceKnown = true;
                     }
-                    if (row.PriceKnown && row.Price <= 0 && row.Reason.Length == 0) row.Reason = "当前报价为零";
-                    if (row.Price > int.MaxValue && row.Reason.Length == 0) row.Reason = "报价超过游戏原生金额上限";
-                    if (row.Price > result.SelectionBudget && row.Reason.Length == 0) row.Reason = "单件报价超过本次允许上限";
+                    if (row.PriceKnown && row.Price <= 0 && row.Reason.Length == 0) row.Reason = L.T("当前报价为零");
+                    if (row.Price > int.MaxValue && row.Reason.Length == 0) row.Reason = L.T("报价超过游戏原生金额上限");
+                    if (row.Price > result.SelectionBudget && row.Reason.Length == 0) row.Reason = L.T("单件报价超过本次允许上限");
                     row.Eligible = row.Reason.Length == 0;
                 }
-                catch (Exception e) { row.Reason = "无法可靠估价：" + ShortError(e); row.Eligible = false; }
+                catch (Exception e) { row.Reason = L.T("无法可靠估价：") + ShortError(e); row.Eligible = false; }
                 result.Items.Add(row);
                 if (expanded)
                     foreach (var child in directChildren) AddItem(child, source + " / " + row.Name,
@@ -238,11 +243,12 @@ public sealed class GameTradeAdapter
                     row = new TradeItem { Key = key, Group = item.identifier ?? "", Native = item };
                     result.Items.Add(row);
                 }
-                row.Name = item.GetDisplayName(false) ?? item.name ?? item.identifier ?? "内容物";
+                row.Name = NativeLocalization.ItemName(item);
+                row.RuleName = result.RuleMembers[key].Name;
                 row.ParentKey = package.Key; row.Source = source; row.RuleOnly = true;
                 row.UnitCount = item.unitCount;
                 row.DescendantKeys = GetDescendants(item).Select(RegisterIdentity).Distinct().ToList();
-                row.Eligible = false; row.Reason = "随包装整件出售；在此设置内容规则";
+                row.Eligible = false; row.Reason = L.T("随包装整件出售；在此设置内容规则");
                 row.RiskBlocked = IsRiskBlocked(item, result.Options, result.CanTrade ? client : null);
                 var facts = MarketFacts(item, marketEvents); row.MarketDiscounted = facts.Discounted; row.MarketMarkedUp = facts.MarkedUp;
                 if (result.CanTrade) { row.Price = Quote(item, store!, client!, entry, marketEvents); row.PriceKnown = true; }
@@ -274,7 +280,7 @@ public sealed class GameTradeAdapter
             {
                 var key = ItemKey(item);
                 if (identities.TryGetValue(key, out var pointer) && pointer != item.Pointer)
-                    throw new InvalidOperationException("存档中存在重复物品 ID，无法安全区分必卖/禁卖规则。");
+                    throw new InvalidOperationException(L.T("存档中存在重复物品 ID，无法安全区分必卖/禁卖规则。"));
                 identities[key] = item.Pointer;
                 if (!result.RuleMembers.ContainsKey(key))
                 {
@@ -287,8 +293,7 @@ public sealed class GameTradeAdapter
                         { parentKey = ItemKey(parent); break; }
                         parent = parent.parentInventory?.GetParentItem();
                     }
-                    result.RuleMembers[key] = new InventoryRuleMember(key,
-                        item.GetDisplayName(false) ?? item.name ?? item.identifier ?? "物品", parentKey);
+                    result.RuleMembers[key] = new InventoryRuleMember(key, NativeLocalization.RuleName(item), parentKey);
                     bool demand = result.CanTrade && client != null && result.Options.CategoryRules.Any(c => c.AllowDemandException) && HasExplicitDemand(item, client);
                     int category = CategoryRuleLogic.Resolve(result.Options.CategoryRules,
                         id => NativeCategoryPolicy.Matches(item, id), demand, result.MarketDay);
@@ -297,7 +302,7 @@ public sealed class GameTradeAdapter
                 return key;
             }
         }
-        catch (Exception e) { return Unavailable(result, "暂时无法读取交易状态：" + ShortError(e)); }
+        catch (Exception e) { return Unavailable(result, L.T("暂时无法读取交易状态：") + ShortError(e)); }
     }
 
     public TradeActionResult Apply(TradeSnapshot snapshot, IEnumerable<string> keys) => Execute(snapshot, keys, false);
@@ -322,7 +327,7 @@ public sealed class GameTradeAdapter
             CategoryOverrides = snapshot.CategoryOverrides.OrderBy(p => p.Key, StringComparer.Ordinal).ToArray(),
             Items = snapshot.Items.OrderBy(i => i.Key, StringComparer.Ordinal).Select(i => new
             {
-                i.Key, i.Group, i.Name, i.Price, i.PriceKnown, i.RiskBlocked, i.Eligible, i.Reason, i.Source,
+                i.Key, i.Group, i.Name, i.RuleName, i.Price, i.PriceKnown, i.RiskBlocked, i.Eligible, i.Reason, i.Source, i.OnTradeTable,
                 i.ParentKey, i.RuleOnly, i.IsRetailPackage, i.UnitCount, i.ContainedUnits, i.MarketDiscounted, i.MarketMarkedUp,
                 DescendantKeys = i.DescendantKeys.OrderBy(k => k, StringComparer.Ordinal).ToArray()
             }).ToArray()
@@ -397,28 +402,28 @@ public sealed class GameTradeAdapter
         try
         {
             var selectedKeys = new HashSet<string>(keys, StringComparer.Ordinal);
-            if (selectedKeys.Count == 0) return Failed(result, "请选择一个包含物品的方案。");
+            if (selectedKeys.Count == 0) return Failed(result, L.T("请选择一个包含物品的方案。"));
             var current = Capture(snapshot.Options);
             if (!current.CanTrade) return Failed(result, current.Message);
-            if (current.ClientKey != snapshot.ClientKey) return Failed(result, "买家已经更换，请重新计算方案。");
+            if (current.ClientKey != snapshot.ClientKey) return Failed(result, L.T("买家已经更换，请重新计算方案。"));
             if (SnapshotSignature(snapshot) != SnapshotSignature(current))
-                return Failed(result, "库存、容器内容、物品位置或交易条件已变化，请重新计算方案。");
+                return Failed(result, L.T("库存、容器内容、物品位置或交易条件已变化，请重新计算方案。"));
             var original = snapshot.Items.ToDictionary(x => x.Key, StringComparer.Ordinal);
             var live = current.Items.ToDictionary(x => x.Key, StringComparer.Ordinal);
             var selection = new List<TradeItem>();
             foreach (var key in selectedKeys)
             {
                 if (!original.TryGetValue(key, out var old) || !live.TryGetValue(key, out var item))
-                    return Failed(result, "方案中的物品已经移动或不再属于你，请重新计算。");
-                if (!item.Eligible) return Failed(result, item.Name + "：" + item.Reason);
-                if (old.Price != item.Price) return Failed(result, item.Name + "的报价发生变化，请重新计算。");
+                    return Failed(result, L.T("方案中的物品已经移动或不再属于你，请重新计算。"));
+                if (!item.Eligible) return Failed(result, item.Name + L.T("：") + item.Reason);
+                if (old.Price != item.Price) return Failed(result, item.Name + L.T("的报价发生变化，请重新计算。"));
                 selection.Add(item);
             }
             var total = selection.Sum(x => x.Price);
-            if (total > current.SelectionBudget) return Failed(result, "方案原报价超过当前允许上限，请重新计算。");
-            if (selection.Count > current.MaxItems) return Failed(result, "该买家一次只接受一件商品。");
+            if (total > current.SelectionBudget) return Failed(result, L.T("方案原报价超过当前允许上限，请重新计算。"));
+            if (selection.Count > current.MaxItems) return Failed(result, L.T("该买家一次只接受一件商品。"));
             if (current.RequireVariety && selection.GroupBy(x => x.Group, StringComparer.Ordinal).Any(g => g.Count() > 1))
-                return Failed(result, "该买家要求不同种类，方案包含重复商品。");
+                return Failed(result, L.T("该买家要求不同种类，方案包含重复商品。"));
 
             var entry = EmporiumEntry.Instance;
             var store = PlayerStore.Instance;
@@ -428,78 +433,78 @@ public sealed class GameTradeAdapter
             // Never silently move unrelated goods (especially a customer's goods).
             for (var i = 0; i < table.childItems.Count; i++)
                 if (!selectedKeys.Contains(ItemKey(table.childItems[i])))
-                    return Failed(result, "交易台上有未选中的物品，请先移回库存，再应用此方案。");
+                    return Failed(result, L.T("交易台上有未选中的物品，请先移回库存，再应用此方案。"));
 
             // For manual staging, require all selected goods to fit. For selling,
             // items are staged one at a time so total area is not an artificial cap.
-            foreach (var row in selection.OrderByDescending(x => x.Source == "交易台").ThenByDescending(x => x.Price))
+            foreach (var row in selection.OrderByDescending(x => x.OnTradeTable).ThenByDescending(x => x.Price))
             {
                 var active = store.currentClientInstance?.GetClientBlueprint();
                 if (active == null || ClientKey(active) != current.ClientKey || active.isBusinessComplete)
-                    return Failed(result, "买家交易状态发生变化，已停止。" + Progress(result));
+                    return Failed(result, L.T("买家交易状态发生变化，已停止。") + Progress(result));
                 if (!GeneralHelper.IsItemOwned(row.Native))
-                    return Failed(result, row.Name + "已不再属于你，已停止。" + Progress(result));
+                    return Failed(result, row.Name + L.T("已不再属于你，已停止。") + Progress(result));
                 var boundaryReason = NativeInventorySourcePolicy.BoundaryReason(row.Native, current.Options);
-                if (boundaryReason.Length > 0) return Failed(result, boundaryReason + "；已停止。" + Progress(result));
+                if (boundaryReason.Length > 0) return Failed(result, boundaryReason + L.T("；已停止。") + Progress(result));
                 if (MarketSignature(ReadMarketEvents(), StoreStation.Instance?.dayCounter ?? 0) != current.MarketSignature)
-                    return Failed(result, "当天日历或市场事件已变化，请重新计算。" + Progress(result));
+                    return Failed(result, L.T("当天日历或市场事件已变化，请重新计算。") + Progress(result));
                 if (IsSaleBundleRiskBlocked(row.Native, current.Options, active))
-                    return Failed(result, "买家拒收或自动禁卖条件已变化，已停止后续操作。" + Progress(result));
+                    return Failed(result, L.T("买家拒收或自动禁卖条件已变化，已停止后续操作。") + Progress(result));
                 if (IsSaleBundleMarketBlocked(row.Native, current.Options))
-                    return Failed(result, "商品受当天事件打折影响，已按交易设置保留。" + Progress(result));
+                    return Failed(result, L.T("商品受当天事件打折影响，已按交易设置保留。") + Progress(result));
                 if (!Same(row.Native.parentInventory, table))
                 {
                     var removalReason = RemovalReason(row.Native);
-                    if (removalReason.Length > 0) return Failed(result, row.Name + "：" + removalReason + "。" + Progress(result));
+                    if (removalReason.Length > 0) return Failed(result, row.Name + L.T("：") + removalReason + L.T("。") + Progress(result));
                     var remainder = GraphUtils.TryAcceptOnce(table.Cast<GraphNodeStorage>(), row.Native, -1);
                     if (remainder != 0 || !Same(row.Native.parentInventory, table))
-                        return Failed(result, "交易台无法完整放下「" + row.Name + "」。已放入的物品仍在台上；可清出台面或使用逐件卖出。" + Progress(result));
+                        return Failed(result, L.T("交易台无法完整放下「") + row.Name + L.T("」。已放入的物品仍在台上；可清出台面或使用逐件卖出。") + Progress(result));
                     result.MovedCount++;
                 }
                 // Moving a native item runs placement callbacks. Those may
                 // alter this same buyer's demand or the container contents.
                 active = store.currentClientInstance?.GetClientBlueprint();
                 if (active == null || ClientKey(active) != current.ClientKey || active.isBusinessComplete)
-                    return Failed(result, "摆放后买家交易状态发生变化，已停止；物品保留在台上。" + Progress(result));
+                    return Failed(result, L.T("摆放后买家交易状态发生变化，已停止；物品保留在台上。") + Progress(result));
                 if (IsSaleBundleRiskBlocked(row.Native, current.Options, active))
-                    return Failed(result, "摆放后买家拒收或自动禁卖条件已变化，本件尚未成交，物品保留在台上。" + Progress(result));
+                    return Failed(result, L.T("摆放后买家拒收或自动禁卖条件已变化，本件尚未成交，物品保留在台上。") + Progress(result));
                 if (row.Native.unitCount != row.UnitCount)
-                    return Failed(result, "摆放后商品数量发生变化，已停止；物品保留在台上。" + Progress(result));
+                    return Failed(result, L.T("摆放后商品数量发生变化，已停止；物品保留在台上。") + Progress(result));
                 if (IsSaleBundleMarketBlocked(row.Native, current.Options))
-                    return Failed(result, "摆放后商品受当天事件打折影响，已停止；物品保留在台上。" + Progress(result));
+                    return Failed(result, L.T("摆放后商品受当天事件打折影响，已停止；物品保留在台上。") + Progress(result));
                 var value = row.Native.GetNegociatedValue();
                 if (value != row.Price)
-                    return Failed(result, "「" + row.Name + "」实际报价为 " + value + "，与预览 " + row.Price + " 不同。已停止，请重新计算；物品保留在台上。" + Progress(result));
+                    return Failed(result, L.T("「") + row.Name + L.T("」实际报价为 ") + value + L.T("，与预览 ") + row.Price + L.T(" 不同。已停止，请重新计算；物品保留在台上。") + Progress(result));
                 // Staging may also exceed the budget within the user's selected
                 // allowance. This only relaxes eligibility; it never sells.
                 var allowOverBudget = current.Options.AllowOverBudget;
                 if (!store.CanSellThisItem(row.Native, allowOverBudget))
-                    return Failed(result, "游戏当前不允许出售「" + row.Name + "」，已停止；物品保留在台上。" + Progress(result));
+                    return Failed(result, L.T("游戏当前不允许出售「") + row.Name + L.T("」，已停止；物品保留在台上。") + Progress(result));
                 if (!sell) continue;
                 var budgetBefore = active.GetBudget();
                 if (value < 0 || value > int.MaxValue || (active.useClientBudget && budgetBefore < 0))
-                    return Failed(result, "游戏原生报价或预算超出安全金额范围，已停止。" + Progress(result));
+                    return Failed(result, L.T("游戏原生报价或预算超出安全金额范围，已停止。") + Progress(result));
                 if (!allowOverBudget && active.useClientBudget && value > budgetBefore)
-                    return Failed(result, "买家剩余预算不足，已停止。" + Progress(result));
+                    return Failed(result, L.T("买家剩余预算不足，已停止。") + Progress(result));
                 var cashBefore = store.playerCash;
                 var expectedPaid = active.useClientBudget ? Math.Min(value, budgetBefore) : value;
                 if ((long)cashBefore + expectedPaid > int.MaxValue)
-                    return Failed(result, "本次成交将超过游戏现金金额上限，已停止。" + Progress(result));
+                    return Failed(result, L.T("本次成交将超过游戏现金金额上限，已停止。") + Progress(result));
                 active = store.currentClientInstance?.GetClientBlueprint();
                 if (active == null || ClientKey(active) != current.ClientKey || active.isBusinessComplete)
-                    return Failed(result, "卖出前买家交易状态发生变化，已停止；物品保留在台上。" + Progress(result));
+                    return Failed(result, L.T("卖出前买家交易状态发生变化，已停止；物品保留在台上。") + Progress(result));
                 if (IsSaleBundleRiskBlocked(row.Native, current.Options, active))
-                    return Failed(result, "卖出前买家拒收或自动禁卖条件已变化，本件尚未成交，物品保留在台上。" + Progress(result));
+                    return Failed(result, L.T("卖出前买家拒收或自动禁卖条件已变化，本件尚未成交，物品保留在台上。") + Progress(result));
                 if (MarketSignature(ReadMarketEvents(), StoreStation.Instance?.dayCounter ?? 0) != current.MarketSignature ||
                     IsSaleBundleMarketBlocked(row.Native, current.Options))
-                    return Failed(result, "卖出前当天行情条件发生变化，请重新计算；物品保留在台上。" + Progress(result));
+                    return Failed(result, L.T("卖出前当天行情条件发生变化，请重新计算；物品保留在台上。") + Progress(result));
                 // SellMultiple(one) would run the accepted-deal callback and
                 // start its dialogue after EVERY object. Match its native loop
                 // using SellItem, then run its UI/dialogue tail once in finally.
                 nativeSaleInProgress = true;
                 store.SellItem(row.Native);
                 if (GeneralHelper.IsItemOwned(row.Native))
-                    return Failed(result, "游戏没有完整完成「" + row.Name + "」的交易，已停止。请检查当前预算和物品；原生回调可能已经改变部分状态。");
+                    return Failed(result, L.T("游戏没有完整完成「") + row.Name + L.T("」的交易，已停止。请检查当前预算和物品；原生回调可能已经改变部分状态。"));
                 result.SoldCount++;
                 var actualPaid = (long)store.playerCash - cashBefore;
                 result.Total += actualPaid;
@@ -508,7 +513,7 @@ public sealed class GameTradeAdapter
                 nativeSaleInProgress = false;
                 var expectedBudget = active.useClientBudget ? budgetBefore - expectedPaid : budgetBefore;
                 if (actualPaid != expectedPaid || active.GetBudget() != expectedBudget)
-                    return Failed(result, "「" + row.Name + "」已成交，但原生实收或预算变化与预期不一致，已停止后续交易。" + Progress(result));
+                    return Failed(result, L.T("「") + row.Name + L.T("」已成交，但原生实收或预算变化与预期不一致，已停止后续交易。") + Progress(result));
                 // Selling makes the item customer-owned. Clear it using the game's
                 // normal sold-inventory destination before staging the next object.
                 if (Same(row.Native.parentInventory, table) && entry.soldElement != null)
@@ -520,61 +525,61 @@ public sealed class GameTradeAdapter
             {
                 var active = store.currentClientInstance?.GetClientBlueprint();
                 if (active == null || ClientKey(active) != current.ClientKey || active.isBusinessComplete)
-                    return Failed(result, "摆放期间买家状态发生变化，请检查交易台后重新计算。" + Progress(result));
+                    return Failed(result, L.T("摆放期间买家状态发生变化，请检查交易台后重新计算。") + Progress(result));
                 var liveBudget = active.useClientBudget ? active.GetBudget() : int.MaxValue;
                 if (liveBudget != current.Budget)
-                    return Failed(result, "摆放期间买家预算发生变化，请检查交易台后重新计算。" + Progress(result));
+                    return Failed(result, L.T("摆放期间买家预算发生变化，请检查交易台后重新计算。") + Progress(result));
                 var tableKeys = new HashSet<string>(StringComparer.Ordinal);
                 for (var i = 0; i < table.childItems.Count; i++) tableKeys.Add(ItemKey(table.childItems[i]));
                 if (!tableKeys.SetEquals(selectedKeys))
-                    return Failed(result, "实际台面物品与方案不一致，已停止；已移动物品保留在台上。" + Progress(result));
+                    return Failed(result, L.T("实际台面物品与方案不一致，已停止；已移动物品保留在台上。") + Progress(result));
                 long stagedTotal = 0;
                 foreach (var row in selection)
                 {
                     if (!Same(row.Native.parentInventory, table) || !GeneralHelper.IsItemOwned(row.Native) ||
                         !store.CanSellThisItem(row.Native, current.Options.AllowOverBudget))
-                        return Failed(result, "「" + row.Name + "」在摆放后状态发生变化，请检查交易台后重新计算。" + Progress(result));
+                        return Failed(result, L.T("「") + row.Name + L.T("」在摆放后状态发生变化，请检查交易台后重新计算。") + Progress(result));
                     if (IsSaleBundleRiskBlocked(row.Native, current.Options, active))
-                        return Failed(result, "摆放后买家拒收或自动禁卖条件已变化，尚未成交；物品保留在台上。" + Progress(result));
+                        return Failed(result, L.T("摆放后买家拒收或自动禁卖条件已变化，尚未成交；物品保留在台上。") + Progress(result));
                     if (row.Native.unitCount != row.UnitCount || IsSaleBundleMarketBlocked(row.Native, current.Options))
-                        return Failed(result, "摆放后商品数量或当天行情条件发生变化，请重新计算。" + Progress(result));
+                        return Failed(result, L.T("摆放后商品数量或当天行情条件发生变化，请重新计算。") + Progress(result));
                     var stagedPrice = row.Native.GetNegociatedValue();
                     if (stagedPrice != row.Price)
-                        return Failed(result, "「" + row.Name + "」在摆放后报价发生变化，请重新计算。" + Progress(result));
+                        return Failed(result, L.T("「") + row.Name + L.T("」在摆放后报价发生变化，请重新计算。") + Progress(result));
                     stagedTotal = checked(stagedTotal + stagedPrice);
                 }
                 if (stagedTotal != total)
-                    return Failed(result, "实际台面总报价与方案不一致，请检查交易台后重新计算。" + Progress(result));
+                    return Failed(result, L.T("实际台面总报价与方案不一致，请检查交易台后重新计算。") + Progress(result));
                 if (MarketSignature(ReadMarketEvents(), StoreStation.Instance?.dayCounter ?? 0) != current.MarketSignature)
-                    return Failed(result, "摆放期间当天日历或事件发生变化，请重新计算。" + Progress(result));
+                    return Failed(result, L.T("摆放期间当天日历或事件发生变化，请重新计算。") + Progress(result));
                 // Native GetMultiSellValue does not filter by budget, but returns
                 // int. Cross-check it where representable; otherwise the checked
                 // long sum of native per-item prices above is authoritative.
                 if (total <= int.MaxValue)
                 {
                     var shown = NegociationUIManager.Instance.GetMultiSellValue();
-                    if (shown != total) return Failed(result, "物品已经放上交易台，但游戏显示总价 " + shown + " 与方案 " + total + " 不一致，请检查台面后重新计算。");
+                    if (shown != total) return Failed(result, L.T("物品已经放上交易台，但游戏显示总价 ") + shown + L.T(" 与方案 ") + total + L.T(" 不一致，请检查台面后重新计算。"));
                 }
                 result.Total = total;
                 result.NominalTotal = total;
-                var placement = result.MovedCount == 0 ? "所选方案已在交易台" : "方案已全部放上交易台";
+                var placement = result.MovedCount == 0 ? L.T("所选方案已在交易台") : L.T("方案已全部放上交易台");
                 var expectedReceipt = active.useClientBudget ? Math.Min(total, liveBudget) : total;
                 var expectedUnpaid = total - expectedReceipt;
                 result.Message = expectedUnpaid > 0
-                    ? placement + "，原价 " + total + "，预计实收 " + expectedReceipt + "，少收 " + expectedUnpaid +
-                      "。尚未成交；请打开最佳报价面板并确认卖出，游戏原有接受按钮不支持此超预算方案。"
-                    : placement + "，游戏总报价 " + total + "。尚未成交，请点击游戏原有接受按钮成交。";
+                    ? placement + L.T("，原价 ") + total + L.T("，预计实收 ") + expectedReceipt + L.T("，少收 ") + expectedUnpaid +
+                      L.T("。尚未成交；请打开最佳报价面板并确认卖出，游戏原有接受按钮不支持此超预算方案。")
+                    : placement + L.T("，游戏总报价 ") + total + L.T("。尚未成交，请点击游戏原有接受按钮成交。");
             }
             result.Success = true;
-            if (sell) result.Message = "已按方案卖出 " + result.SoldCount + " 件，实收 " + result.Total +
-                (result.UnpaidTotal > 0 ? "，让利 " + result.UnpaidTotal : "") + "。";
+            if (sell) result.Message = L.T("已按方案卖出 ") + result.SoldCount + L.T(" 件，实收 ") + result.Total +
+                (result.UnpaidTotal > 0 ? L.T("，让利 ") + result.UnpaidTotal : "") + L.T("。");
             return result;
         }
         catch (Exception e)
         {
-            return Failed(result, "操作停止：" + ShortError(e) + "。" +
+            return Failed(result, L.T("操作停止：") + ShortError(e) + L.T("。") +
                 (nativeSaleInProgress
-                    ? "原生交易可能已经部分改变预算或物品状态，请检查后再操作。已确认完成 " + result.SoldCount + " 件。"
+                    ? L.T("原生交易可能已经部分改变预算或物品状态，请检查后再操作。已确认完成 ") + result.SoldCount + L.T(" 件。")
                     : Progress(result)));
         }
         finally
@@ -600,7 +605,7 @@ public sealed class GameTradeAdapter
                 catch (Exception e)
                 {
                     result.Success = false;
-                    result.Message += " 交易已经结算，但界面收尾失败：" + ShortError(e) + "。" + Progress(result);
+                    result.Message += L.T(" 交易已经结算，但界面收尾失败：") + ShortError(e) + L.T("。") + Progress(result);
                 }
             }
         }
@@ -653,21 +658,21 @@ public sealed class GameTradeAdapter
 
     private static string RemovalReason(GameItem item)
     {
-        if (!GeneralHelper.IsItemOwned(item)) return "物品不属于你";
+        if (!GeneralHelper.IsItemOwned(item)) return L.T("物品不属于你");
         var inventory = item.parentInventory;
-        if (inventory == null) return "物品不在可访问库存中";
-        if (inventory.IsRemoveLocked()) return "所在容器已锁定";
-        if (!item.MayRemove()) return "物品当前不可移动";
+        if (inventory == null) return L.T("物品不在可访问库存中");
+        if (inventory.IsRemoveLocked()) return L.T("所在容器已锁定");
+        if (!item.MayRemove()) return L.T("物品当前不可移动");
         if (item.unitCount <= 0 || item.MaxNumRemove() < item.unitCount)
-            return "内建部件或数量限制：不能完整取出";
-        if (item.IsTag("ITEM_BEHIND_LOCK_TAG")) return "物品位于锁定容器内";
+            return L.T("内建部件或数量限制：不能完整取出");
+        if (item.IsTag("ITEM_BEHIND_LOCK_TAG")) return L.T("物品位于锁定容器内");
         var seen = new HashSet<IntPtr> { item.Pointer };
         var ancestor = inventory.GetParentItem();
         while (ancestor != null)
         {
-            if (!seen.Add(ancestor.Pointer)) return "容器关联异常，无法安全取出";
-            if (!GeneralHelper.IsItemOwned(ancestor)) return "上级容器不属于你";
-            if (LockHelper.IsCurrentlyLocked(ancestor)) return "上级容器已上锁";
+            if (!seen.Add(ancestor.Pointer)) return L.T("容器关联异常，无法安全取出");
+            if (!GeneralHelper.IsItemOwned(ancestor)) return L.T("上级容器不属于你");
+            if (LockHelper.IsCurrentlyLocked(ancestor)) return L.T("上级容器已上锁");
             ancestor = ancestor.parentInventory?.GetParentItem();
         }
         return "";
@@ -676,7 +681,7 @@ public sealed class GameTradeAdapter
     private static List<StoreEvent> ReadMarketEvents()
     {
         var manager = StoreStation.Instance?.storeEventManager;
-        if (manager == null) throw new InvalidOperationException("当天市场事件尚未准备好，请稍后重试。");
+        if (manager == null) throw new InvalidOperationException(L.T("当天市场事件尚未准备好，请稍后重试。"));
         var native = manager.GetActiveEvents();
         var events = new List<StoreEvent>();
         for (int i = 0; native != null && i < native.Count; i++)
@@ -821,7 +826,7 @@ public sealed class GameTradeAdapter
     private static string ShortError(Exception e) => (e.InnerException ?? e).Message.Split('\n')[0];
     private static TradeSnapshot Unavailable(TradeSnapshot s, string message) { s.Message = message; s.CanTrade = false; return s; }
     private static TradeActionResult Failed(TradeActionResult r, string message) { r.Success = false; r.Message = message; return r; }
-    private static string Progress(TradeActionResult r) => r.SoldCount > 0 ? "已成交 " + r.SoldCount + " 件，实收 " + r.Total +
-        (r.UnpaidTotal > 0 ? "，让利 " + r.UnpaidTotal : "") + "；其余尚未出售。" :
-        r.MovedCount > 0 ? "已移动 " + r.MovedCount + " 件，尚未成交。" : "尚未成交。";
+    private static string Progress(TradeActionResult r) => r.SoldCount > 0 ? L.T("已成交 ") + r.SoldCount + L.T(" 件，实收 ") + r.Total +
+        (r.UnpaidTotal > 0 ? L.T("，让利 ") + r.UnpaidTotal : "") + L.T("；其余尚未出售。") :
+        r.MovedCount > 0 ? L.T("已移动 ") + r.MovedCount + L.T(" 件，尚未成交。") : L.T("尚未成交。");
 }

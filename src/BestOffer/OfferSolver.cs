@@ -107,13 +107,13 @@ public static class OfferSolver
         bool requireVariety, int maxItems = int.MaxValue, int maxPlans = 12,
         SolverLimits? limits = null, long? receiptCap = null, bool prioritizePreferred = false)
     {
-        if (candidates is null) return Invalid("物品列表不能为空。");
+        if (candidates is null) return Invalid(L.T("物品列表不能为空。"));
         if (budget < 0 || receiptCap < 0 || maxItems < 0 || maxPlans < 1 || maxPlans > 64)
-            return Invalid("预算及最大件数必须非负，方案数量必须为 1 至 64。");
+            return Invalid(L.T("预算及最大件数必须非负，方案数量必须为 1 至 64。"));
         limits ??= new SolverLimits();
         if (limits.MaxStates < 1 || limits.MaxStoredPaths < 1 || limits.MaxCreatedPaths < 1
             || limits.MaxTransitions < 1 || limits.MaxMilliseconds < 1)
-            return Invalid("搜索资源上限必须为正数。");
+            return Invalid(L.T("搜索资源上限必须为正数。"));
         var work = new ResourceBudget(limits);
         var keys = new HashSet<string>(StringComparer.Ordinal);
         var required = new List<Candidate>();
@@ -124,18 +124,18 @@ public static class OfferSolver
         {
             if (!work.TryTransition()) return Limited();
             if (item is null || string.IsNullOrEmpty(item.Key) || item.Group is null || item.Price < 0)
-                return Invalid("物品需要唯一非空 Key、非空值 Group 和非负价格。");
-            if (!keys.Add(item.Key)) return Invalid("物品 Key 重复：" + item.Key);
+                return Invalid(L.T("物品需要唯一非空 Key、非空值 Group 和非负价格。"));
+            if (!keys.Add(item.Key)) return Invalid(L.T("物品 Key 重复：") + item.Key);
             if (!item.Required) continue;
-            if (item.Forbidden) return Infeasible("同一件物品同时设置为必卖和禁卖：" + item.Key);
+            if (item.Forbidden) return Infeasible(L.T("同一件物品同时设置为必卖和禁卖：") + item.Key);
             if (requireVariety && !requiredGroups.Add(item.Group))
-                return Infeasible("必卖物品中有同组物品，无法满足种类限制。");
+                return Infeasible(L.T("必卖物品中有同组物品，无法满足种类限制。"));
             if (item.Price > budget - requiredTotal)
-                return Infeasible("必卖物品总价超过预算。");
+                return Infeasible(L.T("必卖物品总价超过预算。"));
             requiredTotal += item.Price;
             required.Add(item);
         }
-        if (required.Count > maxItems) return Infeasible("必卖物品数量超过最大件数。");
+        if (required.Count > maxItems) return Infeasible(L.T("必卖物品数量超过最大件数。"));
         long capacity = budget - requiredTotal;
         int slots = maxItems - required.Count;
         var groups = new List<List<Candidate>>();
@@ -371,17 +371,17 @@ public static class OfferSolver
         if (!work.InTime) return Limited();
         var result = Success(plans);
         return result.IsOptimal ? new SolveResult(OfferSolveStatus.Optimal,
-            "已优先选择当天加价商品，再求最高实收及可用备选方案。", result.Plans) : result;
+            L.T("已优先选择当天加价商品，再求最高实收及可用备选方案。"), result.Plans) : result;
     }
 
     private static SolveResult Success(IEnumerable<OfferPlan> plans)
     {
         var array = plans.ToArray();
-        return array.Length == 0 ? Infeasible("预算和筛选条件下没有可出售的非空物品组合。")
-            : new(OfferSolveStatus.Optimal, "已精确求得最高报价及可用备选方案。", array);
+        return array.Length == 0 ? Infeasible(L.T("预算和筛选条件下没有可出售的非空物品组合。"))
+            : new(OfferSolveStatus.Optimal, L.T("已精确求得最高报价及可用备选方案。"), array);
     }
     private static SolveResult Invalid(string message) => new(OfferSolveStatus.InvalidInput, message);
     private static SolveResult Infeasible(string message) => new(OfferSolveStatus.Infeasible, message);
     private static SolveResult Limited() => new(OfferSolveStatus.ResourceLimit,
-        "精确搜索达到时间或内存资源上限，未返回未经证实的最优方案。请减少候选物品、限制种类或件数后重试。");
+        L.T("精确搜索达到时间或内存资源上限，未返回未经证实的最优方案。请减少候选物品、限制种类或件数后重试。"));
 }

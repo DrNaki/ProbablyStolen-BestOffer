@@ -16,10 +16,11 @@ public static class NativeCategoryPolicy
 {
     public static IReadOnlyList<TradeCategory> Categories()
     {
+        using var textScope = NativeLocalization.UseModLanguage();
         var result = new List<TradeCategory>
         {
-            new(CategoryRuleLogic.Contraband, "违禁品", true),
-            new(CategoryRuleLogic.Stolen, "赃物", true)
+            new(CategoryRuleLogic.Contraband, L.T("违禁品"), true),
+            new(CategoryRuleLogic.Stolen, L.T("赃物"), true)
         };
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var types = TypeHelper.ALL_TYPES_LIST;
@@ -30,7 +31,7 @@ public static class NativeCategoryPolicy
                 // The existing risk row already represents the native
                 // CONTRABAND category, including its demand exception.
                 if (string.IsNullOrEmpty(type) || type is "ALL_TYPE" or "ALL_TYPE_EXCEPT_CONTRABAND" or "CONTRABAND" || !seen.Add(type)) continue;
-                string name = TypeHelper.GetTypeDisplayName(type);
+                string name = NativeLocalization.CategoryName(type);
                 result.Add(new("type:" + type, string.IsNullOrWhiteSpace(name) ? type : name));
             }
         return result;
@@ -62,15 +63,15 @@ public sealed partial class BestOfferMod
         {
             if (File.Exists(categoryRulePath))
                 categoryRuleBook = JsonSerializer.Deserialize<CategoryRuleBook>(File.ReadAllText(categoryRulePath)) ?? new();
-            if (categoryRuleBook.Runs == null) throw new InvalidDataException("分类规则存档缺少 Runs。");
+            if (categoryRuleBook.Runs == null) throw new InvalidDataException(L.T("分类规则存档缺少 Runs。"));
             foreach (var run in categoryRuleBook.Runs)
                 if (string.IsNullOrWhiteSpace(run.Key) || run.Value == null || run.Value.Any(pair =>
                     pair.Value == null || !CategoryRuleLogic.IsCategoryId(pair.Key) || pair.Value.Mode is not (0 or 1 or 2) ||
                     pair.Value.DurationDays is < 1 or > CategoryRuleLogic.MaxDurationDays || pair.Value.StartsOnDay < 0 ||
                     pair.Value.Limited && pair.Value.Mode != 0 && (!pair.Value.ExpiresOnDay.HasValue || pair.Value.ExpiresOnDay <= pair.Value.StartsOnDay)))
-                    throw new InvalidDataException("分类规则的类别、规则或有效期无效。");
+                    throw new InvalidDataException(L.T("分类规则的类别、规则或有效期无效。"));
         }
-        catch (Exception e) { categoryRuleBook = new(); LoggerInstance.Warning("读取分类规则失败：" + e.Message); }
+        catch (Exception e) { categoryRuleBook = new(); LoggerInstance.Warning(L.T("读取分类规则失败：") + e.Message); }
         HarmonyInstance.Patch(AccessTools.Method(typeof(StartOfDayUIManager), "InitPanel"),
             prefix: new HarmonyMethod(typeof(BestOfferMod), nameof(BeforeMorningReport)) { priority = HarmonyLib.Priority.Last },
             postfix: new HarmonyMethod(typeof(BestOfferMod), nameof(AfterMorningReport)));
@@ -79,7 +80,7 @@ public sealed partial class BestOfferMod
     static void BeforeMorningReport()
     {
         try { Current?.AppendCategoryExpirationNotices(); }
-        catch (Exception e) { Current?.LoggerInstance.Warning("写入分类规则到期提醒失败：" + e.Message); }
+        catch (Exception e) { Current?.LoggerInstance.Warning(L.T("写入分类规则到期提醒失败：") + e.Message); }
     }
 
     static void AfterMorningReport()
@@ -89,7 +90,7 @@ public sealed partial class BestOfferMod
         foreach (var rule in mod.categoryReportPending) rule.ExpiryNotified = true;
         mod.categoryReportPending.Clear();
         try { mod.SaveCategoryRules(); }
-        catch (Exception e) { mod.LoggerInstance.Warning("保存分类规则到期提醒状态失败：" + e.Message); }
+        catch (Exception e) { mod.LoggerInstance.Warning(L.T("保存分类规则到期提醒状态失败：") + e.Message); }
     }
 
     static (string Run, int Day) CategoryClock()
@@ -135,7 +136,7 @@ public sealed partial class BestOfferMod
 
     CategorySaleRule GetCategoryRule(string id)
     {
-        var scope = CurrentCategoryScope() ?? throw new InvalidOperationException("请进入店铺后设置分类规则。");
+        var scope = CurrentCategoryScope() ?? throw new InvalidOperationException(L.T("请进入店铺后设置分类规则。"));
         if (!scope.TryGetValue(id, out var rule)) scope[id] = rule = new();
         return rule;
     }
@@ -152,7 +153,7 @@ public sealed partial class BestOfferMod
     {
         SaveCategoryRules();
         revision++; plans.Clear(); showConfirm = false; refreshAt = 0; uiDirty = true;
-        status = $"「{name}」分类设置已保存。" + RuleNextStep();
+        status = L.F($"「{name}」分类设置已保存。") + RuleNextStep();
     }
 
     void SetCategoryMode(TradeCategory category, int mode)
@@ -161,7 +162,7 @@ public sealed partial class BestOfferMod
         if (rule.EffectiveMode(CategoryClock().Day) == mode && !rule.IsExpired(CategoryClock().Day)) return;
         rule.SetMode(mode, CategoryClock().Day);
         CategoryRuleChanged(category.Name);
-        if (mode == 0) status = $"已取消「{category.Name}」的分类规则，恢复库存规则。" + RuleNextStep();
+        if (mode == 0) status = L.F($"已取消「{category.Name}」的分类规则，恢复库存规则。") + RuleNextStep();
     }
 
     void ToggleCategoryMode(TradeCategory category, int mode) =>
@@ -172,7 +173,7 @@ public sealed partial class BestOfferMod
         var rule = GetCategoryRule(category.Id);
         rule.CycleForbiddenWithDemandException(CategoryClock().Day);
         CategoryRuleChanged(category.Name);
-        if (rule.Mode == 0) status = $"已取消「{category.Name}」的分类规则，恢复库存规则。" + RuleNextStep();
+        if (rule.Mode == 0) status = L.F($"已取消「{category.Name}」的分类规则，恢复库存规则。") + RuleNextStep();
     }
 
     void SetCategoryPeriod(TradeCategory category, bool limited, int days)

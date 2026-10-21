@@ -1,6 +1,8 @@
 # 最佳报价 / Best Offer
 
-为《深空当铺 / Probably Stolen Demo》提供智能选货、库存保护和一键摆货的 MelonLoader 模组。当前版本 **1.5.0**，界面为简体中文。
+为《深空当铺 / Probably Stolen Demo》提供智能选货、库存保护和一键摆货的 MelonLoader 模组。当前版本 **1.6.0**，按游戏语言自动显示中文或英文。[English README](README.en.md)
+
+游戏语言为中文时保留原有中文界面；英文及其他语言使用英文。切换游戏语言后，面板、提示、分类与到期提醒自动刷新。物品、分类及物品特性直接读取游戏对应语言的原始文本；其他语言下也使用游戏的官方英文名称。原有库存、持续“全部”与分类规则继续生效，不需要重设。
 
 [Nexus 下载与安装说明](https://www.nexusmods.com/probablystolen/mods/723) · [更新记录](https://www.nexusmods.com/probablystolen/mods/723?tab=bugs) · [GitHub 源码](https://github.com/DrNaki/ProbablyStolen-BestOffer)
 
@@ -49,7 +51,7 @@
 
 更新时替换旧 DLL，不要同时保留多个版本。卸载时退出游戏并移走该 DLL。个人设置和单件规则保存在游戏目录的 UserData/BestOffer-settings.json 与 UserData/BestOffer-rules.json；持续“全部”规则另存于 UserData/BestOffer-all-rules.json，分类规则与到期提醒状态保存在 UserData/BestOffer-category-rules.json。更新无需删除。
 
-同时使用配套 **WarehouseSort 1.1.1** 时，请从 Nexus 可选文件下载 **BestOffer 1.5.0 Compat** 补丁。该补丁只扩展兼容版本白名单，整理逻辑不变。
+
 
 ## 构建与验证
 
@@ -57,7 +59,7 @@
 
 从项目根目录运行 scripts/Build.ps1，使用 -GameDir 指定游戏目录，加 -Reproducible 可启用可复现构建。脚本会运行报价求解、同名分组、风险策略、库存来源及分类规则测试，产物位于 dist/BestOffer.dll。构建不会自动部署到游戏。
 
-当前构建已通过 73,332 个求解器断言及 3,600 个穷举对照、2,480 个分组断言、566 个风险断言、61 个库存来源检查和 366 个分类规则断言。1.4.3 原发布另通过 27 个回滚场景与原生巡逻警官拒收验证。
+当前构建通过 2,694 个本地化检查、73,332 个求解器断言及 3,600 个穷举对照、2,480 个分组断言、566 个风险断言、61 个库存来源检查和 366 个分类规则断言。另通过 631 项游戏原版名称映射检查。默认回滚到 1.5.0，已通过 27 个回滚场景。完整回滚包位于 rollback/BestOffer-1.5.0.zip，退出游戏后运行 scripts/Rollback.ps1 即可回退；个人配置与存档保持原样。
 
 仓库包含模组源码、构建／安装脚本、测试和实机展示素材。游戏程序集、互操作程序集、加载器二进制、个人存档、配置及本地分析工具不在仓库中。依赖说明见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
 

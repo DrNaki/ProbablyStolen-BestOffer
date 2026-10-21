@@ -11,7 +11,7 @@ using MelonLoader.Utils;
 using UnityEngine;
 using DeepSpaceModSupport;
 
-[assembly: MelonInfo(typeof(DeepSpaceBestOffer.BestOfferMod), "最佳报价 / Best Offer", "1.5.0", "Naki & Codex")]
+[assembly: MelonInfo(typeof(DeepSpaceBestOffer.BestOfferMod), "最佳报价 / Best Offer", "1.6.0", "Naki & Codex")]
 [assembly: MelonGame("Questing Goose Studio", "Probably Stolen")]
 
 namespace DeepSpaceBestOffer;
@@ -26,7 +26,7 @@ public sealed partial class BestOfferMod : MelonMod
     readonly Dictionary<string, int> allGroupRules = new(StringComparer.Ordinal);
     List<OfferPlan> plans = new();
     int selected, itemPage, planPage, revision, filter, detailPage;
-    string status = "点击「计算最佳报价」开始。";
+    string status = L.T("点击「计算最佳报价」开始。");
     bool showConfirm;
     GameObject? blocker;
     sealed record PendingCalculation(Task<SolveResult> Work, int Revision, bool QuickApply,
@@ -56,6 +56,8 @@ public sealed partial class BestOfferMod : MelonMod
     public override void OnInitializeMelon()
     {
         Current = this;
+        NativeLocalization.Initialize(HarmonyInstance);
+        RefreshGameLanguage(true);
         rulePath = Path.Combine(MelonEnvironment.UserDataDirectory, "BestOffer-rules.json");
         allGroupRulePath = Path.Combine(MelonEnvironment.UserDataDirectory, "BestOffer-all-rules.json");
         settingsPath = Path.Combine(MelonEnvironment.UserDataDirectory, "BestOffer-settings.json");
@@ -65,21 +67,21 @@ public sealed partial class BestOfferMod : MelonMod
                 foreach (var p in System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, int>>(File.ReadAllText(rulePath)) ?? new())
                     if (p.Value is 1 or 2) rules[p.Key] = p.Value;
         }
-        catch (Exception e) { LoggerInstance.Warning("读取偏好失败: " + e.Message); }
+        catch (Exception e) { LoggerInstance.Warning(L.T("读取偏好失败: ") + e.Message); }
         try
         {
             if (File.Exists(allGroupRulePath))
                 foreach (var p in System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, int>>(File.ReadAllText(allGroupRulePath)) ?? new())
                     if (p.Value is 0 or 1 or 2 && p.Key.Contains('\u001f')) allGroupRules[p.Key] = p.Value;
         }
-        catch (Exception e) { LoggerInstance.Warning("读取全部库存规则失败: " + e.Message); }
+        catch (Exception e) { LoggerInstance.Warning(L.T("读取全部库存规则失败: ") + e.Message); }
         try
         {
             if (File.Exists(settingsPath))
             {
                 var saved = System.Text.Json.JsonSerializer.Deserialize<TradeOptions>(File.ReadAllText(settingsPath));
                 if (saved == null || saved.OverBudgetValue < 0 || !Enum.IsDefined(typeof(OverBudgetMode), saved.OverBudgetMode))
-                    throw new InvalidDataException("报价选项无效，使用默认设置。");
+                    throw new InvalidDataException(L.T("报价选项无效，使用默认设置。"));
                 includeShowcase = saved.IncludeShowcase; includeHiddenStorage = saved.IncludeHiddenStorage;
                 includeContainerContents = saved.IncludeContainerContents; allowOverBudget = saved.AllowOverBudget;
                 includeMachineContents = saved.IncludeMachineContents; includeMachineProducts = saved.IncludeMachineProducts;
@@ -97,7 +99,7 @@ public sealed partial class BestOfferMod : MelonMod
                 toolbarY = float.IsFinite(saved.ToolbarY) ? saved.ToolbarY : 18;
             }
         }
-        catch (Exception e) { LoggerInstance.Warning("读取报价选项失败: " + e.Message); }
+        catch (Exception e) { LoggerInstance.Warning(L.T("读取报价选项失败: ") + e.Message); }
         InitializeCategoryRules();
         InitializeLocalSettings();
         HarmonyInstance.Patch(AccessTools.Method(typeof(InputActionManager), "Update"),
@@ -111,7 +113,7 @@ public sealed partial class BestOfferMod : MelonMod
             prefix: new HarmonyMethod(typeof(BestOfferMod), nameof(ResolveNativeEscape)));
         HarmonyInstance.Patch(AccessTools.Method(typeof(EscapeUIManager), "OpenEscapeMenu"),
             prefix: new HarmonyMethod(typeof(BestOfferMod), nameof(AllowGameInput)));
-        LoggerInstance.Msg($"最佳报价 v1.5.0 已载入；{panelHotkey} 打开报价配置，可设置当天行情、货源与禁卖保护。");
+        LoggerInstance.Msg(L.F($"最佳报价 v1.6.0 已载入；{panelHotkey} 打开报价配置，可设置当天行情、货源与禁卖保护。"));
     }
 
     static bool AllowGameInput() => Current?.ShouldBlockNativeInput() != true;
@@ -161,7 +163,7 @@ public sealed partial class BestOfferMod : MelonMod
     void OptionsChanged()
     {
         revision++; plans.Clear(); showConfirm = false; itemPage = 0; refreshAt = 0;
-        status = snapshot?.CanTrade == true ? "报价选项已更改，请重新计算。" : "设置已保存；买家到来后按规则筛选。";
+        status = snapshot?.CanTrade == true ? L.T("报价选项已更改，请重新计算。") : L.T("设置已保存；买家到来后按规则筛选。");
         SaveSettings();
     }
 
@@ -202,6 +204,7 @@ public sealed partial class BestOfferMod : MelonMod
     {
         try
         {
+            RefreshGameLanguage();
             UpdateCategoryRuleDate();
             RefreshManagerVisibility();
             bool managerVisible = ManagerIntegration.Visible;
@@ -228,7 +231,7 @@ public sealed partial class BestOfferMod : MelonMod
             {
                 var audit = adapter.DevelopmentOnlyAuditCapture(5, CurrentOptions());
                 File.WriteAllText(Path.Combine(MelonEnvironment.UserDataDirectory, "BestOffer-capture-audit.json"), audit);
-                LoggerInstance.Msg("只读报价状态审计已保存。");
+                LoggerInstance.Msg(L.T("只读报价状态审计已保存。"));
             }
             // Validate the live input before accepting a completed asynchronous
             // result, including when it finishes between the periodic refreshes.
@@ -240,8 +243,8 @@ public sealed partial class BestOfferMod : MelonMod
                 {
                     snapshot = current; plans.Clear(); revision++; showConfirm = false;
                     status = allowOverBudget && !TryOverBudgetNumber(out _)
-                        ? "请输入有效的非负上限；点击数字框后可用 Ctrl+A 全选替换。"
-                        : current.CanTrade ? "顾客、价格、货源或库存已变化，请重新计算。" : current.Message;
+                        ? L.T("请输入有效的非负上限；点击数字框后可用 Ctrl+A 全选替换。")
+                        : current.CanTrade ? L.T("顾客、价格、货源或库存已变化，请重新计算。") : current.Message;
                 }
             }
             if (pending != null && pending.Work.IsCompleted)
@@ -251,7 +254,7 @@ public sealed partial class BestOfferMod : MelonMod
                 {
                     if (work.Work.IsFaulted)
                     {
-                        status = "计算失败：" + work.Work.Exception?.GetBaseException().Message;
+                        status = L.T("计算失败：") + work.Work.Exception?.GetBaseException().Message;
                         if (work.QuickApply) ShowQuickNotice(status);
                         return;
                     }
@@ -261,7 +264,7 @@ public sealed partial class BestOfferMod : MelonMod
                     if (GameTradeAdapter.SnapshotSignature(live) != work.Signature)
                     {
                         revision++; plans.Clear(); snapshot = live;
-                        status = "顾客、价格或库存已变化，本次未摆货，请重新点击。";
+                        status = L.T("顾客、价格或库存已变化，本次未摆货，请重新点击。");
                         if (work.QuickApply) ShowQuickNotice(status);
                         return;
                     }
@@ -269,14 +272,14 @@ public sealed partial class BestOfferMod : MelonMod
                     var result = work.Work.Result;
                     plans = result.Plans.ToList(); selected = 0; planPage = 0;
                     status = plans.Count > 0
-                        ? (snapshot!.Options.PreferMarketMarkups ? "加价优先 · 实收 " : "最高实收 ") + $"{Receipts(plans[0], snapshot!)} · 名义报价 {plans[0].TotalPrice} · 不收取 {Uncollected(plans[0], snapshot!)} · {plans.Count} 个方案"
-                        : (result.Status == OfferSolveStatus.ResourceLimit ? "搜索未完成：" : "没有可行方案：") + result.Message;
+                        ? (snapshot!.Options.PreferMarketMarkups ? L.T("加价优先 · 实收 ") : L.T("最高实收 ")) + L.F($"{Receipts(plans[0], snapshot!)} · 名义报价 {plans[0].TotalPrice} · 不收取 {Uncollected(plans[0], snapshot!)} · {plans.Count} 个方案")
+                        : (result.Status == OfferSolveStatus.ResourceLimit ? L.T("搜索未完成：") : L.T("没有可行方案：")) + result.Message;
                     LoggerInstance.Msg(status);
                     WriteDiagnostics();
                     if (work.QuickApply)
                     {
                         bool applied = plans.Count > 0 && ApplySelected(false);
-                        ShowQuickNotice(status, applied ? "摆货已完成\n等待确认成交" : null);
+                        ShowQuickNotice(status, applied ? L.T("摆货已完成\n等待确认成交") : null);
                     }
                 }
             }
@@ -285,7 +288,7 @@ public sealed partial class BestOfferMod : MelonMod
         catch (Exception e)
         {
             bool wasQuick = QuickApplying;
-            status = "读取游戏状态失败：" + e.Message; LoggerInstance.Warning(e.ToString());
+            status = L.T("读取游戏状态失败：") + e.Message; LoggerInstance.Warning(e.ToString());
             Close();
             if (wasQuick) ShowQuickNotice(status);
         }
@@ -293,7 +296,7 @@ public sealed partial class BestOfferMod : MelonMod
 
     void ShowQuickNotice(string message, string? compact = null)
     {
-        quickNotice = compact ?? "未完成摆货\nF8 查看原因"; quickNoticeUntil = Time.unscaledTime + 12;
+        quickNotice = compact ?? L.T("未完成摆货\nF8 查看原因"); quickNoticeUntil = Time.unscaledTime + 12;
         quickNoticeDetail = message; quickNoticeClientKey = snapshot?.ClientKey ?? "";
         if (compact == null) LoggerInstance.Msg(message);
         SuppressTransitionInput();
@@ -302,7 +305,7 @@ public sealed partial class BestOfferMod : MelonMod
     {
         if (!QuickApplying) return;
         revision++;
-        ShowQuickNotice("已取消摆货，物品未移动。", "摆货已取消\n物品未移动");
+        ShowQuickNotice(L.T("已取消摆货，物品未移动。"), L.T("摆货已取消\n物品未移动"));
     }
     void StartQuickApply()
     {
@@ -322,7 +325,7 @@ public sealed partial class BestOfferMod : MelonMod
         groupQuantities.Clear(); groupModes.Clear(); expandedGroup = ""; ResetInventoryNavigation(); uiDirty = true;
         revision++; plans.Clear(); showConfirm = false; itemPage = 0; captureHotkey = 0;
         status = Time.unscaledTime < quickNoticeUntil && quickNoticeClientKey == snapshot.ClientKey && !string.IsNullOrEmpty(quickNoticeDetail)
-            ? quickNoticeDetail : snapshot.CanTrade ? "选择货源并设置必卖 / 禁卖，再计算最高实收方案。" : snapshot.Message;
+            ? quickNoticeDetail : snapshot.CanTrade ? L.T("选择货源并设置必卖 / 禁卖，再计算最高实收方案。") : snapshot.Message;
         EnsureBlocker(); if (blocker != null) blocker.SetActive(true); refreshAt = Time.unscaledTime + 1;
     }
     void Close()
@@ -361,7 +364,7 @@ public sealed partial class BestOfferMod : MelonMod
             File.WriteAllText(rulePath, System.Text.Json.JsonSerializer.Serialize(rules));
             File.WriteAllText(allGroupRulePath, System.Text.Json.JsonSerializer.Serialize(allGroupRules));
         }
-        catch (Exception e) { LoggerInstance.Warning("保存偏好失败: " + e.Message); }
+        catch (Exception e) { LoggerInstance.Warning(L.T("保存偏好失败: ") + e.Message); }
     }
     void SaveSettings()
     {
@@ -378,7 +381,7 @@ public sealed partial class BestOfferMod : MelonMod
             File.WriteAllText(settingsPath, System.Text.Json.JsonSerializer.Serialize(saved,
                 new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
         }
-        catch (Exception e) { LoggerInstance.Warning("保存报价选项失败: " + e.Message); }
+        catch (Exception e) { LoggerInstance.Warning(L.T("保存报价选项失败: ") + e.Message); }
     }
     int OwnRule(string key) => OwnRule(key, snapshot);
     int OwnRule(string key, TradeSnapshot? context) =>
@@ -397,11 +400,11 @@ public sealed partial class BestOfferMod : MelonMod
     string RuleNote(TradeItem i)
     {
         int category = CategoryRuleLogic.EffectiveRule(i.DescendantKeys.Prepend(i.Key).Select(key => CategoryRule(key, snapshot)), Array.Empty<int>());
-        if (category != 0) return category == 1 ? " · 分类必卖优先" : " · 分类禁卖优先";
+        if (category != 0) return category == 1 ? L.T(" · 分类必卖优先") : L.T(" · 分类禁卖优先");
         int contents = 0;
         foreach (var key in i.DescendantKeys) contents |= OwnRule(key);
-        if (Rule(i) == 3) return " · 必卖/禁卖冲突";
-        return contents == 1 ? " · 内容物必卖" : contents == 2 ? " · 内容物禁卖" : "";
+        if (Rule(i) == 3) return L.T(" · 必卖/禁卖冲突");
+        return contents == 1 ? L.T(" · 内容物必卖") : contents == 2 ? L.T(" · 内容物禁卖") : "";
     }
     void ClearCurrentRules()
     {
@@ -416,26 +419,26 @@ public sealed partial class BestOfferMod : MelonMod
             foreach (var key in item.DescendantKeys) rules.Remove(key);
         }
         revision++; plans.Clear(); showConfirm = false; SaveRules();
-        status = "当前库存、容器内容及本存档的持续「全部」规则已清除。";
+        status = L.T("当前库存、容器内容及本存档的持续「全部」规则已清除。");
     }
     void SetRule(TradeItem i, int rule)
     {
-        string groupKey = ItemRuleGroupLogic.GroupKey(i.ParentKey, i.Name, i.Key);
+        string groupKey = ItemRuleGroupLogic.GroupKey(i.ParentKey, i.RuleName, i.Key);
         if (allGroupRules.ContainsKey(groupKey) && snapshot != null)
         {
             ItemRuleGroupLogic.DisableAll(rules, allGroupRules, groupKey, snapshot.RuleMembers.Values);
-            groupQuantities[groupKey] = snapshot.Items.Count(item => item.ParentKey == i.ParentKey && item.Name == i.Name);
+            groupQuantities[groupKey] = snapshot.Items.Count(item => item.ParentKey == i.ParentKey && item.RuleName == i.RuleName);
         }
         else groupQuantities.Remove(groupKey);
         if (rule == 0) rules.Remove(i.Key); else rules[i.Key] = rule;
         revision++; plans.Clear(); showConfirm = false;
-        status = snapshot?.CanTrade == true ? "筛选条件已更改，请重新计算。" : "规则已保存，买家到来后应用。";
+        status = snapshot?.CanTrade == true ? L.T("筛选条件已更改，请重新计算。") : L.T("规则已保存，买家到来后应用。");
         SaveRules();
     }
     void Calculate(bool quickApply = false)
     {
         if (busy) return;
-        if (allowOverBudget && !TryOverBudgetNumber(out _)) { status = "请输入有效的非负超出上限。"; return; }
+        if (allowOverBudget && !TryOverBudgetNumber(out _)) { status = L.T("请输入有效的非负超出上限。"); return; }
         snapshot = adapter.Capture(CurrentOptions()); revision++; plans.Clear(); showConfirm = false;
         if (!snapshot.CanTrade) { status = snapshot.Message; return; }
         var includedKeys = snapshot.Items.SelectMany(i => i.DescendantKeys.Append(i.Key)).ToHashSet(StringComparer.Ordinal);
@@ -449,32 +452,32 @@ public sealed partial class BestOfferMod : MelonMod
             allSources.IncludeShowcase = true; allSources.IncludeHiddenStorage = true;
             allSources.IncludeContainerContents = allSources.IncludeMachineContents = allSources.IncludeMachineProducts = allSources.SplitRetailPackages = true;
             var fullScope = adapter.Capture(allSources);
-            if (!fullScope.CanTrade) { status = "无法确认必卖物品范围：" + fullScope.Message; return; }
+            if (!fullScope.CanTrade) { status = L.T("无法确认必卖物品范围：") + fullScope.Message; return; }
             var requiredOutsideScope = fullScope.RuleMembers.Keys.Where(key =>
                 !includedKeys.Contains(key) && EffectiveOwnRule(key, fullScope) == 1).ToHashSet(StringComparer.Ordinal);
             var excludedRequired = fullScope.Items.Where(i => requiredOutsideScope.Contains(i.Key) ||
                 i.DescendantKeys.Any(requiredOutsideScope.Contains)).ToList();
             if (excludedRequired.Count > 0)
             {
-                status = "必卖物品在未包含范围：" + string.Join("；", excludedRequired.Take(2).Select(i => i.Name + "（" + i.Source + "）")) +
-                    (excludedRequired.Count > 2 ? "等" : "") + "。请勾选相关范围或取消必卖。";
+                status = L.T("必卖物品在未包含范围：") + string.Join(L.T("；"), excludedRequired.Take(2).Select(i => i.Name + L.T("（") + i.Source + L.T("）"))) +
+                    (excludedRequired.Count > 2 ? L.T("等") : "") + L.T("。请勾选相关范围或取消必卖。");
                 return;
             }
         }
         var conflicts = snapshot.Items.Where(i => !i.RuleOnly && Rule(i) == 3).ToList();
         if (conflicts.Count > 0)
         {
-            status = "必卖/禁卖规则冲突：" + string.Join("；", conflicts.Select(i => i.Name)) + "。请调整容器或内容物规则，或点击清除规则。";
+            status = L.T("必卖/禁卖规则冲突：") + string.Join(L.T("；"), conflicts.Select(i => i.Name)) + L.T("。请调整容器或内容物规则，或点击清除规则。");
             return;
         }
         var rejected = snapshot.Items.Where(i => !i.RuleOnly && Rule(i) == 1 && !i.Eligible).ToList();
-        if (rejected.Count > 0) { status = "必卖条件无法满足：" + string.Join("；", rejected.Select(i => i.Name + "（" + i.Reason + "）")); return; }
+        if (rejected.Count > 0) { status = L.T("必卖条件无法满足：") + string.Join(L.T("；"), rejected.Select(i => i.Name + L.T("（") + i.Reason + L.T("）"))); return; }
         var candidates = snapshot.Items.Where(i => i.Eligible).OrderBy(i => i.Key, StringComparer.Ordinal).Select(i => new Candidate
         { Key = i.Key, Group = i.Group, Price = i.Price, Required = Rule(i) == 1, Forbidden = Rule(i) == 2,
             Preferred = i.MarketMarkedUp }).ToArray();
         long budget = snapshot.SelectionBudget, receiptCap = snapshot.Budget;
         bool variety = snapshot.RequireVariety, prefer = snapshot.Options.PreferMarketMarkups; int max = snapshot.MaxItems;
-        status = quickApply ? "正在计算并摆货……按 Esc 可取消。" : "正在精确计算……";
+        status = quickApply ? L.T("正在计算并摆货……按 Esc 可取消。") : L.T("正在精确计算……");
         pending = new PendingCalculation(
             Task.Run(() => OfferSolver.Solve(candidates, budget, variety, max, quickApply ? 1 : 12, receiptCap: receiptCap,
                 prioritizePreferred: prefer)),
@@ -509,6 +512,6 @@ public sealed partial class BestOfferMod : MelonMod
             LoggerInstance.Msg(status); plans.Clear(); revision++; showConfirm = false; snapshot = adapter.Capture(CurrentOptions());
             return result.Success;
         }
-        catch (Exception e) { status = "应用失败：" + e.Message; LoggerInstance.Warning(e.ToString()); return false; }
+        catch (Exception e) { status = L.T("应用失败：") + e.Message; LoggerInstance.Warning(e.ToString()); return false; }
     }
 }

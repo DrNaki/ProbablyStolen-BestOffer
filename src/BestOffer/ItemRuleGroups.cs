@@ -8,6 +8,7 @@ namespace DeepSpaceBestOffer;
 public sealed class InventoryRuleGroup
 {
     public string Name { get; }
+    public string RuleName { get; }
     public IReadOnlyList<TradeItem> Items { get; }
     public int Count => Items.Count;
     public int EligibleCount => Items.Count(i => i.Eligible);
@@ -15,8 +16,8 @@ public sealed class InventoryRuleGroup
     public long MaxPrice => Items.Count == 0 ? 0 : Items.Max(i => i.Price);
     public bool HasDifferences { get; }
 
-    internal InventoryRuleGroup(string name, IReadOnlyList<TradeItem> items, bool hasDifferences)
-    { Name = name; Items = items; HasDifferences = hasDifferences; }
+    internal InventoryRuleGroup(string ruleName, IReadOnlyList<TradeItem> items, bool hasDifferences)
+    { RuleName = ruleName; Name = items.FirstOrDefault()?.Name ?? ruleName; Items = items; HasDifferences = hasDifferences; }
 }
 
 public sealed partial class BestOfferMod
@@ -25,12 +26,12 @@ public sealed partial class BestOfferMod
     {
         // Filter whole groups, never their individual members. A forbidden-only
         // view must still permit changing ten forbidden copies down to three.
-        return ItemRuleGroupLogic.GroupByDisplayName(inventory.Where(i => i.ParentKey == parentKey), i => i.Key, i => i.Name)
+        return ItemRuleGroupLogic.GroupByDisplayName(inventory.Where(i => i.ParentKey == parentKey), i => i.Key, i => i.RuleName)
             .Select(g => new InventoryRuleGroup(g.Name, g.Items,
                 g.Items.Select(ItemDifferenceSignature).Distinct(StringComparer.Ordinal).Skip(1).Any()))
             .Where(g => selectedFilter == 0 || g.Items.Any(i =>
                 selectedFilter == 1 ? i.Eligible : selectedFilter == 2 ? (Rule(i) & 1) != 0 :
-                selectedFilter == 3 && ((Rule(i) & 2) != 0 || i.RiskBlocked))).ToList();
+                selectedFilter == 3 && ((Rule(i) & 2) != 0 || i.RiskBlocked))).OrderBy(g => g.Name, StringComparer.Ordinal).ToList();
     }
 
     int GroupOwnRuleCount(InventoryRuleGroup group, int rule) => group.Items.Count(i => OwnRule(i.Key) == rule);
@@ -42,7 +43,7 @@ public sealed partial class BestOfferMod
     // A quantity chosen inside one box belongs to that box, even when another
     // package contains medicine with the same display name.
     static string GroupStateKey(InventoryRuleGroup group) =>
-        ItemRuleGroupLogic.GroupKey(group.Items.FirstOrDefault()?.ParentKey ?? "", group.Name,
+        ItemRuleGroupLogic.GroupKey(group.Items.FirstOrDefault()?.ParentKey ?? "", group.RuleName,
             group.Items.FirstOrDefault()?.Key ?? "");
 
     bool GroupSelectsAll(InventoryRuleGroup group) => allGroupRules.ContainsKey(GroupStateKey(group));
@@ -61,15 +62,15 @@ public sealed partial class BestOfferMod
         {
             ItemRuleGroupLogic.DisableAll(rules, allGroupRules, key, CurrentRuleMembers);
             groupQuantities[key] = group.Count;
-            status = $"「{group.Name}」已取消全部，数量保留为当前最大值 {group.Count}，现在可编辑。";
+            status = L.F($"「{group.Name}」已取消全部，数量保留为当前最大值 {group.Count}，现在可编辑。");
         }
         else
         {
             if (mode == 0) allGroupRules[key] = 0;
             else ItemRuleGroupLogic.SetAllRule(rules, allGroupRules, key, CurrentRuleMembers, mode);
             groupQuantities.Remove(key);
-            status = $"「{group.Name}」已勾选全部，数量随库存变化；" +
-                (mode == 0 ? "请选择必卖或禁卖。" : $"今后新增的同名商品也会{(mode == 1 ? "必卖" : "禁卖")}。" + RuleNextStep());
+            status = L.F($"「{group.Name}」已勾选全部，数量随库存变化；") +
+                (mode == 0 ? L.T("请选择必卖或禁卖。") : L.F($"今后新增的同名商品也会{(mode == 1 ? L.T("必卖") : L.T("禁卖"))}。") + RuleNextStep());
         }
         if (mode != 0) groupModes[key] = mode;
         AllGroupRuleChanged();
@@ -81,14 +82,14 @@ public sealed partial class BestOfferMod
         if (change.ChangedCount > 0)
         { revision++; plans.Clear(); showConfirm = false; SaveRules(); }
         if (rule == 0)
-        { status = $"「{group.Name}」的 {group.Count} 件单件规则已清除；容器内容规则保留。" + RuleNextStep(); return; }
-        string label = rule == 1 ? "必卖" : "禁卖";
-        string opposite = rule == 1 ? "禁卖" : "必卖";
-        status = $"「{group.Name}」{label} {change.AppliedCount} / {group.Count} 件" +
-            (change.OppositeCount > 0 ? $"；保留 {change.OppositeCount} 件{opposite}" : "") + "。" + RuleNextStep();
+        { status = L.F($"「{group.Name}」的 {group.Count} 件单件规则已清除；容器内容规则保留。") + RuleNextStep(); return; }
+        string label = rule == 1 ? L.T("必卖") : L.T("禁卖");
+        string opposite = rule == 1 ? L.T("禁卖") : L.T("必卖");
+        status = L.F($"「{group.Name}」{label} {change.AppliedCount} / {group.Count} 件") +
+            (change.OppositeCount > 0 ? L.F($"；保留 {change.OppositeCount} 件{opposite}") : "") + L.T("。") + RuleNextStep();
     }
 
-    string RuleNextStep() => snapshot?.CanTrade == true ? "请重新计算。" : "已保存，买家到来后应用。";
+    string RuleNextStep() => snapshot?.CanTrade == true ? L.T("请重新计算。") : L.T("已保存，买家到来后应用。");
 
     static string ItemDifferenceSignature(TradeItem item)
     {

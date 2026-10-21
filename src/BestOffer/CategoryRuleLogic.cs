@@ -132,7 +132,7 @@ public static class CategoryRuleLogic
 
     public static string PeriodDescription(CategorySaleRule rule, int day)
     {
-        if (!rule.Limited) return "不限期";
+        if (!rule.Limited) return L.T("不限期");
         return ExpiryDescription(rule.ExpiresOnDay ?? checked(day + rule.DurationDays), day);
     }
 
@@ -140,12 +140,12 @@ public static class CategoryRuleLogic
     {
         string relative = (expiresOnDay - day) switch
         {
-            <= 0 => "已到期",
-            1 => "明天到期",
-            2 => "后天到期",
-            var remaining => $"{remaining} 天后到期"
+            <= 0 => L.T("已到期"),
+            1 => L.T("明天到期"),
+            2 => L.T("后天到期"),
+            var remaining => L.F($"{remaining} 天后到期")
         };
-        return $"{relative}（第 {expiresOnDay} 天）";
+        return L.F($"{relative}（第 {expiresOnDay} 天）");
     }
 
     public static int PeriodDaysForEditing(CategorySaleRule rule, int day) =>
@@ -154,6 +154,6 @@ public static class CategoryRuleLogic
             : rule.DurationDays;
 
     public static string ExpiryMessage(string categoryName, int mode, int expiredDay) => mode == 2
-        ? $"「{categoryName}」的分类禁卖已到期（第 {expiredDay} 天）。今日起最佳报价可交易此分类，库存规则仍然生效。"
-        : $"「{categoryName}」的分类必卖已到期（第 {expiredDay} 天）。今日起恢复按库存规则选货，不再强制出售此分类。";
+        ? L.F($"「{categoryName}」的分类禁卖已到期（第 {expiredDay} 天）。今日起最佳报价可交易此分类，库存规则仍然生效。")
+        : L.F($"「{categoryName}」的分类必卖已到期（第 {expiredDay} 天）。今日起恢复按库存规则选货，不再强制出售此分类。");
 }
