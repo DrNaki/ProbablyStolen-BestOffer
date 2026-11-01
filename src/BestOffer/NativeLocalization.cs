@@ -62,11 +62,20 @@ internal static class NativeLocalization
 
     static bool GetScoped(string table, string key, Il2CppReferenceArray<Il2CppSystem.Object>? arguments, ref string result)
     {
-        if (textLocale == null) return true;
-        var entry = LocalizationSettings.StringDatabase.GetTable(table, textLocale).GetEntry(key);
-        result = entry == null ? key : entry.GetLocalizedString(textLocale.Identifier.CultureInfo?.Cast<Il2CppSystem.IFormatProvider>(),
-            arguments?.Cast<Il2CppSystem.Collections.Generic.IList<Il2CppSystem.Object>>(), null);
-        return false;
+        if (textLocale == null || NativeLocaleReader.SelectedLocaleIfReady() == null) return true;
+        try
+        {
+            var entry = LocalizationSettings.StringDatabase.GetTable(table, textLocale)?.GetEntry(key);
+            // Retain the game's fallback and formatting-error handling rather
+            // than allowing our prefix to break a native/third-party UI call.
+            if (entry == null) return true;
+            var value = entry.GetLocalizedString(textLocale.Identifier.CultureInfo?.Cast<Il2CppSystem.IFormatProvider>(),
+                arguments?.Cast<Il2CppSystem.Collections.Generic.IList<Il2CppSystem.Object>>(), null);
+            if (value == null) return true;
+            result = value;
+            return false;
+        }
+        catch { return true; }
     }
 
     static bool GetScopedLocaleCode(ref string __result)
@@ -79,7 +88,9 @@ internal static class NativeLocalization
     internal static string? GameLocaleCode()
     {
         // This is called outside text scopes, only from Unity's main thread.
-        try { return LocalizationSettings.SelectedLocale?.Identifier.Code; }
+        // The SelectedLocale getter can initialize settings and synchronously
+        // load Addressables, including while ModLoader is still in Awake.
+        try { return NativeLocaleReader.SelectedLocaleIfReady()?.Identifier.Code; }
         catch { return null; }
     }
 
@@ -108,10 +119,22 @@ internal static class NativeLocalization
         public void Dispose() => textLocale = previous;
     }
 
-    internal static TextScope UseModLanguage() => new(L.Chinese ? null : Resolve("en"));
+    internal static TextScope UseModLanguage() => new(L.Chinese || NativeLocaleReader.SelectedLocaleIfReady() == null
+        ? null : Resolve("en"));
 
-    static StringTable Table(string name, string language) =>
-        LocalizationSettings.StringDatabase.GetTable(name, Resolve(language));
+    internal static void InvalidateNameCaches()
+    {
+        locales.Clear(); nameKeys.Clear(); translatedNames.Clear();
+    }
+
+    static StringTable Table(string name, string language)
+    {
+        // Also guard direct name/category queries (for example from another
+        // mod during loading), not only the usual trade-panel text scope.
+        if (NativeLocaleReader.SelectedLocaleIfReady() == null)
+            throw new InvalidOperationException("Game localization is not ready; retry after initialization.");
+        return LocalizationSettings.StringDatabase.GetTable(name, Resolve(language));
+    }
 
     static string CachedName(string tableName, string raw, string preferredKey, string language)
     {
@@ -131,7 +154,7 @@ internal static class NativeLocalization
         // language. This also covers aliases whose key differs from identifier.
         var available = LocalizationSettings.AvailableLocales.Locales;
         var ordered = new List<Locale>();
-        var current = LocalizationSettings.SelectedLocale;
+        var current = NativeLocaleReader.SelectedLocaleIfReady();
         if (current != null) ordered.Add(current);
         var zh = Resolve("zh"); var en = Resolve("en");
         if (!ordered.Any(l => l.Identifier.Code == zh.Identifier.Code)) ordered.Add(zh);
@@ -203,11 +226,13 @@ public sealed partial class BestOfferMod
         if (!force && UnityEngine.Time.unscaledTime < languageCheckAt) return;
         languageCheckAt = UnityEngine.Time.unscaledTime + .5f;
         string? code = NativeLocalization.GameLocaleCode();
-        if (code == null && !force) return;
-        code ??= "";
+        // Unknown is a loading state, not English. In particular, force at mod
+        // startup must not select a language before the game has selected one.
+        if (string.IsNullOrWhiteSpace(code)) return;
         if (!force && code == gameLocaleCode) return;
         gameLocaleCode = code;
         L.SetGameLanguage(code);
+        NativeLocalization.InvalidateNameCaches();
         // A background answer and every displayed name belong to the old
         // language snapshot. Discard it before accepting further input.
         revision++; plans.Clear(); showConfirm = false;

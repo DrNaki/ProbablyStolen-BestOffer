@@ -1,4 +1,4 @@
-# Best Offer 1.7.1 · Steam Workshop
+# Best Offer 1.7.2 · Steam Workshop
 
 以 Nexus 1.6.1 的功能为基础，适配《Probably Stolen》正式版原生 Mod 系统，按新版交易平板重构四页界面。报价求解、分组、库存保护、分类期限、风险规则和手动成交机制保持原有行为。
 
@@ -12,7 +12,7 @@
 .\scripts\BuildWorkshop.ps1
 ```
 
-该命令生成独立的 `src/BestOffer.Workshop/Generated` 平台适配源码，执行原报价穷举对照、快捷键及新增分类测试，再构建 .NET Standard 2.1 DLL。发布目录为 `workshop-release/1.7.1/content`，不覆盖 Nexus 的 `dist/BestOffer.dll`。`-GameDir` 可指定正式版安装目录。
+该命令生成独立的 `src/BestOffer.Workshop/Generated` 平台适配源码，执行原报价穷举对照、快捷键及新增分类测试，再构建 .NET Standard 2.1 DLL。发布目录为 `workshop-release/1.7.2/content`，不覆盖 Nexus 的 `dist/BestOffer.dll`。`-GameDir` 可指定正式版安装目录。
 
 新界面实现见 `src/BestOffer.Workshop/WorkshopTabletUI.cs`，使用正式版 `TabletStyle` 配色和 `TabletSkin.frame2/frameNotched` 边框。原生平板完整位图无9slice边界，未将其强行拉宽。原模态遮罩、输入保护、Esc 优先关闭分类选择器等交互继续保留。
 
@@ -29,3 +29,5 @@
 发布包只包含 BestOffer.dll、manifest.xml、README、第三方说明和预览图。仅声明 `files` 和 `reflection-external`；不附带游戏程序集、框架 DLL、加载器或其他 Mod。
 
 1.7.1：主菜单 Mods / 改装件页面的齿轮现可设置面板和诊断快捷键。输入 F8 或 Ctrl+F10 等组合，点击应用后立即生效，与店铺的交易设置双向同步。无效、Esc、纯修饰键和重复组合会保留旧设置。该模组的封面高度会为完整介绍及滚动区让出空间，权限信息保持完整。
+
+1.7.2：等待游戏本地化初始化完成后再读取语言，避免模组提前创建默认设置或同步等待资源；缺少翻译或格式化失败时使用游戏回退，切换语言后刷新名称缓存。正式版构建新增 109 项语言初始化及隔离回归检查。

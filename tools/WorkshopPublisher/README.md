@@ -26,18 +26,18 @@ dotnet <entry.dll> details --id <workshop-id>
 ```json
 {
   "GameDirectory": "E:\\Steam\\steamapps\\common\\Probably Stolen",
-  "ContentFolder": "C:\\Projects\\BestOffer\\workshop-release\\1.7.1\\content",
-  "PreviewFile": "C:\\Projects\\BestOffer\\workshop-release\\1.7.1\\content\\preview.png",
+  "ContentFolder": "C:\\Projects\\BestOffer\\workshop-release\\1.7.2\\content",
+  "PreviewFile": "C:\\Projects\\BestOffer\\workshop-release\\1.7.2\\content\\preview.png",
   "AdditionalPreviewFiles": [
     "C:\\Projects\\BestOffer\\media\\v1.7.1\\01_中文_库存规则.jpg",
     "C:\\Projects\\BestOffer\\media\\v1.7.1\\02_中文_分类规则.jpg"
   ],
   "Title": "最佳报价 / Best Offer - Smart Trading Assistant",
-  "DescriptionFile": "C:\\Projects\\BestOffer\\workshop-release\\1.7.1\\description.bbcode.txt",
+  "DescriptionFile": "C:\\Projects\\BestOffer\\workshop-release\\1.7.2\\description.bbcode.txt",
   "Language": "schinese",
-  "ChangeNote": "Steam Workshop release of Best Offer 1.7.1.",
+  "ChangeNote": "Steam Workshop release of Best Offer 1.7.2.",
   "Tags": ["Mod", "Quality of Life", "UI"],
-  "StateFile": "C:\\Projects\\BestOffer\\workshop-release\\1.7.1\\workshop-state.json",
+  "StateFile": "C:\\Projects\\BestOffer\\workshop-release\\1.7.2\\workshop-state.json",
   "TimeoutSeconds": 300
 }
 ```

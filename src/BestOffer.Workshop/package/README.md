@@ -1,4 +1,4 @@
-# 最佳报价 / Best Offer 1.7.1
+# 最佳报价 / Best Offer 1.7.2
 
 从 Nexus Best Offer 1.6.1 适配到《Probably Stolen》正式版原生 Mod 系统，并以新版交易平板重构界面。
 智能选货、一键摆货、库存与分类规则、中英文界面沿用 Nexus 版本。
@@ -40,3 +40,6 @@ Author: Naki & Codex
 
 
 1.7.1：主菜单 Mods / 改装件页面的齿轮现可设置面板和诊断快捷键。输入 F8 或 Ctrl+F10 等组合，点击应用后立即生效，与店铺的交易设置双向同步。无效、Esc、纯修饰键和重复组合会保留旧设置。该模组的封面高度会为完整介绍及滚动区让出空间，权限信息保持完整。
+
+1.7.2：修复启动阶段过早读取语言的时序风险，改进缺少文本时的回退和语言切换后的名称缓存。交易与规则逻辑保留。
+1.7.2: defer language detection until the game finishes localization; improve missing-text fallbacks and refresh cached names on language changes. Trading and rules are unchanged.
