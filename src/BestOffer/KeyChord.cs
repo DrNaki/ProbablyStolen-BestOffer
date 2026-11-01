@@ -23,4 +23,9 @@ internal readonly record struct KeyChord(string Key, bool Ctrl, bool Alt, bool S
         result = new(key, ctrl, alt, shift); return true;
     }
     public override string ToString() => (Ctrl ? "Ctrl+" : "") + (Alt ? "Alt+" : "") + (Shift ? "Shift+" : "") + Key;
+    internal static bool ValidHotkeyPair(string panel, string audit) =>
+        TryParse(panel, out var p) && TryParse(audit, out var a) &&
+        !p.Key.Equals("Escape", StringComparison.OrdinalIgnoreCase) &&
+        !a.Key.Equals("Escape", StringComparison.OrdinalIgnoreCase) &&
+        !p.ToString().Equals(a.ToString(), StringComparison.OrdinalIgnoreCase);
 }

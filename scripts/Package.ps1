@@ -1,7 +1,7 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [string]$GameDir = 'E:\Steam\steamapps\common\Probably Stolen Demo',
-    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '1.6.0'
+    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '1.6.1'
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -67,7 +67,7 @@ if ($loaderManifest.Version -ne '0.7.3' -or $loaderManifest.SourceSha256 -ne
     throw 'MelonLoader 来源清单与指定官方版本不一致。'
 }
 $docRoot = Join-Path $projectDir 'docs'
-$publicDocuments = @('1.6.0-更新说明.md', '1.6.0-验收记录.md')
+$publicDocuments = @("$Version-更新说明.md", "$Version-验收记录.md", "$Version-界面调整验收.md")
 $documents = @($publicDocuments | ForEach-Object { Get-Item -LiteralPath (Get-SafeSource ('docs/' + $_)) })
 if ($documents.Count -eq 0) { throw 'docs 尚无最终文档；请完成文档后再打包。' }
 $allowedDocExtensions = @('.md', '.txt', '.pdf', '.html', '.css', '.png', '.jpg', '.jpeg', '.svg', '.webp')
@@ -102,11 +102,16 @@ function Add-Payload([string]$Relative, [string]$SourceRelative = '') {
 Add-Payload 'README.md'
 Add-Payload 'README.en.md'
 Add-Payload 'THIRD-PARTY-NOTICES.md'
-Add-Payload 'compat/WarehouseSort-1.6.0.patch'
 Add-Payload 'media/v1.4.3/one-click-trade.gif'
 Add-Payload 'media/v1.4.3/05-trade-settings.png'
 Add-Payload 'media/v1.5.0/category-rules.png'
 Add-Payload 'media/v1.5.0/category-grid.png'
+foreach ($name in @('README.md', '01-trade-hotkeys.jpg', '02-trade-hotkeys-en.jpg')) {
+    Add-Payload ('media/v1.6.1/' + $name)
+}
+foreach ($name in @('01-hotkey-row.png', '02-hover-help.png')) {
+    Add-Payload ('media/v1.6.1/ui-refinement/' + $name)
+}
 Add-Payload 'dist/BestOffer.dll'
 Add-Payload 'dist/BestOffer.pdb'
 Add-Payload 'tests/OfferSolver.Tests.csproj'

@@ -4,6 +4,8 @@
 /dist/
 /release/
 /nexus-release/
+/workshop-release/
+/src/BestOffer.Workshop/Generated/
 **/bin/
 **/obj/
 *.es3

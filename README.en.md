@@ -1,4 +1,42 @@
-# Best Offer 1.6.0
+# Best Offer 1.7.1
+
+A native mod for the full release of **Probably Stolen**: smart item selection, inventory protection and one-click trade-table placement. The interface follows the game's language, using Chinese or English. [简体中文](README.md)
+
+## Install and use
+
+- **Steam Workshop:** [Subscribe to Best Offer](https://steamcommunity.com/sharedfiles/filedetails/?id=3830638812), restart, review and enable it in the main-menu Mods screen, then restart as requested.
+- **Nexus manual installation:** Exit the game and copy the full-release package's `Mods/BestOffer` folder into the game directory. Enable it in the Mods screen. The native DLL belongs at `Mods/BestOffer/BestOffer.dll`; MelonLoader is not required.
+- In your shop, press **F8** or select **Offer Settings** on the trading tablet. Configure Inventory Rules, Category Rules, Offer Plans and Trade Settings. **Auto-fill Offer** places selected goods; review the game's quote and confirm the sale yourself.
+- Change hotkeys through the main-menu mod gear or Trade Settings. Both editors stay in sync. Defaults: **F8** for the panel and **F9** for read-only diagnostics while the panel is open. F1–F12 support optional Ctrl, Alt and Shift modifiers.
+
+Compatible game version: **0.46D (100-REV6), Steam build 26337366**. Version 1.7.0 adapts the UI to the full game's trading tablet and reads its categories, including Modified Seed: 61 rule categories including contraband and stolen goods. Version 1.7.1 adds working native mod-menu hotkey settings and fixes the details layout. The existing solver, inventory and category policies, budgets and manual settlement behavior are retained.
+
+Preserve `UserData/BestOffer-*.json` when updating. To migrate demo settings, close both games before copying these files into the full game's `UserData`. When local and Workshop copies coexist, the game uses the local copy; check which copy is enabled when updating.
+
+## Demo
+
+![One-click placement](media/v1.7.1/10_English_Auto-Fill-Demo.gif)
+
+[Version 1.7.1 screenshots, videos and GIFs](media/v1.7.1) follow menu order, Chinese first and English second. See the accompanying media notes for original version labels and differences between planned and placed quantities.
+
+## Build
+
+Requires .NET 8 SDK, Python and the installed full game:
+
+```powershell
+.\scripts\BuildWorkshop.ps1 -GameDir 'E:\Steam\steamapps\common\Probably Stolen'
+```
+
+Output: `workshop-release/1.7.1/content`. The command runs solver, category and hotkey tests; it does not install or upload. Game assemblies are read from your local installation and are not redistributed.
+
+[Native build details (Chinese)](README.Workshop.md) · [Third-party notices](THIRD-PARTY-NOTICES.md)
+
+The legacy MelonLoader demo version remains **1.6.1**, built with `scripts/Build.ps1` into `dist/BestOffer.dll`. The archived instructions below apply to the demo.
+
+<details>
+<summary>Demo 1.6.1 instructions</summary>
+
+# Best Offer 1.6.1
 
 Best Offer is a MelonLoader mod for **Probably Stolen Demo**. It finds the highest paying combination of your goods, protects stock you want to keep, and places selected items on the trade table.
 
@@ -26,7 +64,9 @@ Press **F8** in your shop, or click **Offer Settings** on the trade tablet. You 
 
 **Auto-fill Offer** calculates a plan and places its items on the trade table. You still confirm the sale yourself. Press **Esc** to cancel while it is calculating.
 
-Press **F8**, **Esc**, or **×** to close the panel. If the category picker is open, Esc closes the picker first. Recalculate whenever the buyer, stock, prices, budget or relevant settings change.
+Press your **panel hotkey**, **Esc**, or **×** to close the panel. If the category picker is open, Esc closes the picker first. Recalculate whenever the buyer, stock, prices, budget or relevant settings change.
+
+In **Trade Settings → Edit Hotkeys**, click **Panel Hotkey** or **Diagnostics Hotkey**, then press F1–F12 with optional Ctrl, Alt and Shift modifiers. Esc cancels capture. Hover over the heading or either button for 500 ms to see instructions; moving away hides them. Defaults are F8 and F9. You can also select Best Offer in Mod Manager, click a hotkey, press the new combination and click **Apply**. Both editors stay in sync and settings persist after restarting. Panel and diagnostics must use different combinations. Diagnostics only exports read-only information while the offer panel is open.
 
 ## Rules and trading details
 
@@ -55,3 +95,5 @@ The complete source package includes the verified **1.5.0** release at `rollback
 With .NET SDK, the game and MelonLoader installed, run `scripts/Build.ps1` from the repository root. Set `-GameDir` if needed; add `-Reproducible` for fixed source paths. The script runs localization and trading tests, then writes `dist/BestOffer.dll`. Building does not install the mod.
 
 Author: **Naki & Codex**. See [third-party notices](THIRD-PARTY-NOTICES.md) for dependency information.
+
+</details>

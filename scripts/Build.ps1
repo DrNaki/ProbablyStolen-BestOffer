@@ -16,6 +16,9 @@ if (!(Test-Path -LiteralPath (Join-Path $gameRoot 'MelonLoader\Il2CppAssemblies\
     throw '缺少游戏互操作程序集：请先安装 MelonLoader 并启动游戏一次，等待生成完成后再构建。'
 }
 if (!$SkipTests) {
+    Write-Host '正在验证快捷键解析、组合键与重复绑定保护……'
+    & dotnet run --project (Join-Path $projectDir 'tests\KeyChord.Tests\KeyChord.Tests.csproj') --configuration $Configuration
+    if ($LASTEXITCODE -ne 0) { throw "快捷键测试失败，退出码 $LASTEXITCODE。" }
     Write-Host '正在验证自动语言、双语文案完整性与跨语言规则……'
     & dotnet run --project (Join-Path $projectDir 'tests\Localization.Tests\Localization.Tests.csproj') --configuration $Configuration
     if ($LASTEXITCODE -ne 0) { throw "本地化测试失败，退出码 $LASTEXITCODE。" }

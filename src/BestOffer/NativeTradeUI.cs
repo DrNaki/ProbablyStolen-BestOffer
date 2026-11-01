@@ -166,7 +166,7 @@ public sealed partial class BestOfferMod
         else BuildSettingsPage(root);
         var footerLine = MakeBox(root, 48, pageHeight - 97, 1024, 1, Line);
         nativeStatus = MakeText(root, 48, pageHeight - 86, 806, 46, status, 13, Ink);
-        var footerHelp = MakeText(root, 874, pageHeight - 73, 198, 22, L.T("Esc 返回交易  ·  1.6.0"), 12, Muted, TextAlignmentOptions.Right);
+        var footerHelp = MakeText(root, 874, pageHeight - 73, 198, 22, L.T("Esc 返回交易  ·  1.6.1"), 12, Muted, TextAlignmentOptions.Right);
         bool showFooter = uiTab != 1 || !categoryPickerOpen;
         footerLine.SetActive(showFooter); nativeStatus.gameObject.SetActive(showFooter); footerHelp.gameObject.SetActive(showFooter);
         if (uiTab == 1 && categoryPickerOpen) BuildCategoryPicker(root);
@@ -464,11 +464,20 @@ public sealed partial class BestOfferMod
         MakeNumberField(root, 902, 466, 170, 38);
         MakeText(root, left, 512, 733, 28, L.T("超出的金额不收取，实际卖出前会再次确认。"), 13, Ink);
         MakeText(root, 798, 512, 274, 28, overBudgetPercent ? L.T("%  /  以剩余预算计算") : L.T("信用点"), 13, Muted, TextAlignmentOptions.Right);
-        MakeBox(root, left, 551, 1024, 1, Line);
-        MakeText(root, left, 574, 168, 30, L.T("快捷键"), 21, Rust);
-        MakeButton(root, 234, 568, 396, 38, captureHotkey == 1 ? L.T("按功能键，Esc 取消") : L.T("打开面板  /  ") + panelHotkey, () => { captureHotkey = 1; uiDirty = true; }, Muted, !busy);
-        MakeButton(root, 648, 568, 424, 38, captureHotkey == 2 ? L.T("按功能键，Esc 取消") : L.T("只读诊断  /  ") + auditHotkey, () => { captureHotkey = 2; uiDirty = true; }, Muted, !busy);
-        MakeText(root, 234, 608, 838, 20, L.T("支持 Ctrl / Alt / Shift + 功能键；请避免与其他模组重复。"), 12, Muted);
+        const float hotkeyDividerY = 551, hotkeyRowHeight = 38;
+        // Center the entire row in the clear space between both divider lines.
+        float hotkeyRowY = (hotkeyDividerY + 1 + NativeHeight - 97 - hotkeyRowHeight) / 2;
+        float hotkeyHelpY = hotkeyRowY + hotkeyRowHeight + 8;
+        MakeBox(root, left, hotkeyDividerY, 1024, 1, Line);
+        var hotkeyTitle = MakeText(root, left, hotkeyRowY, 168, hotkeyRowHeight, L.T("修改快捷键"), 21, Rust);
+        hotkeyTitle.verticalAlignment = VerticalAlignmentOptions.Middle;
+        hotkeyTitle.raycastTarget = true;
+        var panelHotkeyButton = MakeButton(root, 234, hotkeyRowY, 396, hotkeyRowHeight, captureHotkey == 1 ? L.T("按功能键，Esc 取消") : L.T("面板快捷键  /  ") + panelHotkey, () => { captureHotkey = 1; uiDirty = true; }, captureHotkey == 1 ? Rust : Muted, !busy);
+        var auditHotkeyButton = MakeButton(root, 648, hotkeyRowY, 424, hotkeyRowHeight, captureHotkey == 2 ? L.T("按功能键，Esc 取消") : L.T("诊断快捷键  /  ") + auditHotkey, () => { captureHotkey = 2; uiDirty = true; }, captureHotkey == 2 ? Rust : Muted, !busy);
+        string hotkeyHelp = L.T("点击对应按钮，然后按 F1–F12 设置快捷键；按 Esc 取消。\n支持 Ctrl / Alt / Shift 组合键，请避免与其他模组重复。");
+        AddSettingTooltip(hotkeyTitle.gameObject, root, hotkeyHelp, 234, hotkeyHelpY, 838, 58);
+        AddSettingTooltip(panelHotkeyButton, root, hotkeyHelp, 234, hotkeyHelpY, 838, 58);
+        AddSettingTooltip(auditHotkeyButton, root, hotkeyHelp, 234, hotkeyHelpY, 838, 58);
         AddSettingTooltip(showcase, root, L.T("店铺展示柜里摆放的商品。"), left, 394, column, 54);
         AddSettingTooltip(hiddenStorage, root, L.T("店铺隐藏仓库中存放的商品。"), left, 394, column, 54);
         AddSettingTooltip(containers, root, L.T("背包、储藏箱等普通容器里的物品。\n工具箱和机器需单独勾选。"), left, 394, column, 54);
@@ -482,13 +491,14 @@ public sealed partial class BestOfferMod
 
     void AddSettingTooltip(GameObject target, Transform root, string explanation, float x, float y, float width, float height)
     {
-        // Keep the hover text in the description area beneath the source grid.
+        // Keep hover text inside the page, clear of the target control.
         // Its entire graphic tree ignores raycasts, so controls stay reachable.
         var tooltip = MakeBox(root, x, y, width, height, Line);
         tooltip.GetComponent<Image>().raycastTarget = false;
         var fill = MakeBox(tooltip.transform, 1, 1, width - 2, height - 2, new Color(.96f, .89f, .70f));
         fill.GetComponent<Image>().raycastTarget = false;
-        MakeText(tooltip.transform, 10, 6, width - 20, height - 12, explanation, 14, Ink);
+        MakeText(tooltip.transform, 10, 6, width - 20, height - 12, explanation, 14, Ink)
+            .verticalAlignment = VerticalAlignmentOptions.Middle;
         tooltip.SetActive(false);
         var trigger = target.AddComponent<UIEventTrigger>();
         void Register(EventTriggerType eventType, bool visible)

@@ -64,7 +64,7 @@ $parseTokens = $null; $parseErrors = $null
 $packageAst = [Management.Automation.Language.Parser]::ParseFile((Join-Path $project 'scripts\Package.ps1'), [ref]$parseTokens, [ref]$parseErrors)
 Check ($parseErrors.Count -eq 0) 'Package script has syntax errors'
 $versionDefault = @($packageAst.ParamBlock.Parameters | Where-Object { $_.Name.VariablePath.UserPath -eq 'Version' })[0].DefaultValue.SafeGetValue()
-Check ($versionDefault -eq '1.6.0') 'Package default version is not 1.6.0'
+Check ($versionDefault -eq ([xml](Get-Content (Join-Path $project 'src\BestOffer\BestOffer.csproj') -Raw)).Project.PropertyGroup.Version) 'Package default version differs from the mod version'
 $packageText = [IO.File]::ReadAllText((Join-Path $project 'scripts\Package.ps1'))
 Check ($packageText.Contains($oldZipHash) -and $packageText.Contains("Add-Payload 'rollback/BestOffer-1.5.0.zip'")) 'Package does not bundle the pinned 1.5.0 rollback archive'
 $install = Join-Path $project 'scripts\Install.ps1'

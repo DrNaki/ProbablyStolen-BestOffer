@@ -11,7 +11,7 @@ using MelonLoader.Utils;
 using UnityEngine;
 using DeepSpaceModSupport;
 
-[assembly: MelonInfo(typeof(DeepSpaceBestOffer.BestOfferMod), "最佳报价 / Best Offer", "1.6.0", "Naki & Codex")]
+[assembly: MelonInfo(typeof(DeepSpaceBestOffer.BestOfferMod), "最佳报价 / Best Offer", "1.6.1", "Naki & Codex")]
 [assembly: MelonGame("Questing Goose Studio", "Probably Stolen")]
 
 namespace DeepSpaceBestOffer;
@@ -100,6 +100,7 @@ public sealed partial class BestOfferMod : MelonMod
             }
         }
         catch (Exception e) { LoggerInstance.Warning(L.T("读取报价选项失败: ") + e.Message); }
+        if (!KeyChord.ValidHotkeyPair(panelHotkey, auditHotkey)) { panelHotkey = "F8"; auditHotkey = "F9"; }
         InitializeCategoryRules();
         InitializeLocalSettings();
         HarmonyInstance.Patch(AccessTools.Method(typeof(InputActionManager), "Update"),
@@ -113,7 +114,7 @@ public sealed partial class BestOfferMod : MelonMod
             prefix: new HarmonyMethod(typeof(BestOfferMod), nameof(ResolveNativeEscape)));
         HarmonyInstance.Patch(AccessTools.Method(typeof(EscapeUIManager), "OpenEscapeMenu"),
             prefix: new HarmonyMethod(typeof(BestOfferMod), nameof(AllowGameInput)));
-        LoggerInstance.Msg(L.F($"最佳报价 v1.6.0 已载入；{panelHotkey} 打开报价配置，可设置当天行情、货源与禁卖保护。"));
+        LoggerInstance.Msg(L.F($"最佳报价 v1.6.1 已载入；{panelHotkey} 打开报价配置，可设置当天行情、货源与禁卖保护。"));
     }
 
     static bool AllowGameInput() => Current?.ShouldBlockNativeInput() != true;
@@ -184,7 +185,7 @@ public sealed partial class BestOfferMod : MelonMod
         if (EmporiumEntry.Instance == null) return false;
         // These checks run in each native Update prefix, so the opening click is
         // intercepted even if Unity invokes the native Update before MelonUpdate.
-        // UnityEngine.Input itself remains untouched; F8 and HitButton still work.
+        // UnityEngine.Input itself remains untouched; hotkeys and HitButton still work.
         if (ManagerIntegration.Visible) return false;
         if (ManagerIntegration.Down(panelHotkey))
         {
@@ -205,11 +206,13 @@ public sealed partial class BestOfferMod : MelonMod
         try
         {
             RefreshGameLanguage();
+            ApplyManagerHotkeys();
             UpdateCategoryRuleDate();
             RefreshManagerVisibility();
             bool managerVisible = ManagerIntegration.Visible;
             if (managerVisible)
             {
+                pendingPanelToggle = pendingAudit = false;
                 ResetSettingTooltip();
                 if (nativeLaunchers != null) nativeLaunchers.SetActive(false);
                 if (launcherNotice != null) launcherNotice.gameObject.SetActive(false);
@@ -217,9 +220,10 @@ public sealed partial class BestOfferMod : MelonMod
             }
             if (managerWasVisible) { SuppressTransitionInput(); managerWasVisible = false; return; }
             UpdateNativeUI();
-            if (captureHotkey != 0) return;
+            if (captureHotkey != 0) { CaptureLocalHotkey(); return; }
+            if (Time.frameCount <= captureFinishedThroughFrame) return;
             // Native InputField handles numeric editing.
-            if (ManagerIntegration.Down(panelHotkey)) { Toggle(); }
+            UpdateHotkeyActions();
             if (IsOpen && Input.GetKeyDown(KeyCode.Escape))
             {
                 if (uiTab == 1 && categoryPickerOpen) { categoryPickerOpen = false; uiDirty = true; SuppressTransitionInput(); }
@@ -227,12 +231,6 @@ public sealed partial class BestOfferMod : MelonMod
             }
             else if (QuickApplying && Input.GetKeyDown(KeyCode.Escape))
             { CancelQuick(); }
-            if (IsOpen && ManagerIntegration.Down(auditHotkey))
-            {
-                var audit = adapter.DevelopmentOnlyAuditCapture(5, CurrentOptions());
-                File.WriteAllText(Path.Combine(MelonEnvironment.UserDataDirectory, "BestOffer-capture-audit.json"), audit);
-                LoggerInstance.Msg(L.T("只读报价状态审计已保存。"));
-            }
             // Validate the live input before accepting a completed asynchronous
             // result, including when it finishes between the periodic refreshes.
             if (IsOpen && (Time.unscaledTime >= refreshAt || pending?.Work.IsCompleted == true))
@@ -296,7 +294,7 @@ public sealed partial class BestOfferMod : MelonMod
 
     void ShowQuickNotice(string message, string? compact = null)
     {
-        quickNotice = compact ?? L.T("未完成摆货\nF8 查看原因"); quickNoticeUntil = Time.unscaledTime + 12;
+        quickNotice = compact ?? L.F($"未完成摆货\n{panelHotkey} 查看原因"); quickNoticeUntil = Time.unscaledTime + 12;
         quickNoticeDetail = message; quickNoticeClientKey = snapshot?.ClientKey ?? "";
         if (compact == null) LoggerInstance.Msg(message);
         SuppressTransitionInput();
@@ -332,7 +330,7 @@ public sealed partial class BestOfferMod : MelonMod
     {
         CancelQuick();
         if (IsOpen) SuppressTransitionInput();
-        IsOpen = false; captureHotkey = 0; categoryPickerOpen = false;
+        IsOpen = false; captureHotkey = 0; pendingCapturedHotkey = ""; categoryPickerOpen = false;
         ResetSettingTooltip();
         revision++; showConfirm = false;
         // Unity destroys scene objects before this callback; its overloaded null
@@ -351,11 +349,6 @@ public sealed partial class BestOfferMod : MelonMod
         finally { DestroyNativeUI(); Current = null; }
     }
     void EnsureBlocker() => EnsureNativePanel();
-    public override void OnGUI()
-    {
-        if (captureHotkey != 0 && Event.current != null && Event.current.rawType == EventType.KeyDown)
-        { CaptureLocalHotkey(Event.current); Event.current.Use(); uiDirty = true; }
-    }
     void SaveRules()
     {
         try

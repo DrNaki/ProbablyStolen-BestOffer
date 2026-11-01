@@ -12,4 +12,9 @@ foreach (var sample in new[] { ("F8", "F8", false, false, false), ("shift+F7", "
 }
 foreach (string? invalid in new string?[] { null, "", " ", "Shift", "Ctrl+Shift", "Ctrl+Ctrl+F7", "Control+Ctrl+F7", "F7+F8", "F7+", "+F7", "Ctrl++F8" })
     Check(!KeyChord.TryParse(invalid, out _));
-Console.WriteLine($"PASS: {assertions} hotkey parsing/roundtrip assertions.");
+foreach (var pair in new[] { ("F8", "F9"), ("Ctrl+F9", "F9"), ("Shift+F8", "Alt+F8"), ("F9", "F8") })
+    Check(KeyChord.ValidHotkeyPair(pair.Item1, pair.Item2));
+foreach (var pair in new[] { ("F8", "f8"), ("Ctrl+F8", "Control+f8"), ("Escape", "F9"),
+    ("F8", "Shift+Escape"), ("", "F9"), ("F8", "Ctrl+Shift") })
+    Check(!KeyChord.ValidHotkeyPair(pair.Item1, pair.Item2));
+Console.WriteLine($"PASS: {assertions} hotkey parsing/roundtrip and binding-pair assertions.");
