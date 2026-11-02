@@ -26,6 +26,8 @@ public sealed class TradeOptions
     public decimal OverBudgetValue { get; set; } = 10m;
     public string PanelHotkey { get; set; } = "F8";
     public string AuditHotkey { get; set; } = "F9";
+    public string PlaceHotkey { get; set; } = "Ctrl+F8";
+    public string SellHotkey { get; set; } = "Ctrl+F9";
     public float ToolbarX { get; set; } = -1;
     public float ToolbarY { get; set; } = 18;
 

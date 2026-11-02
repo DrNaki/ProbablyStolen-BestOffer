@@ -2,9 +2,10 @@
   <PropertyGroup>
     <TargetFramework>netstandard2.1</TargetFramework>
     <AssemblyName>BestOffer</AssemblyName>
-    <Version>1.7.2</Version>
+    <Version>1.7.3</Version>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <DefineConstants>$(DefineConstants);BESTOFFER_NATIVE</DefineConstants>
     <LangVersion>latest</LangVersion>
     <Deterministic>true</Deterministic>
     <GameDir Condition="'$(GameDir)' == ''">E:\Steam\steamapps\common\Probably Stolen</GameDir>

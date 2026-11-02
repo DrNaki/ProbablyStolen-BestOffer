@@ -28,7 +28,7 @@ for path in source.glob('*.cs'):
         continue
     original = path.read_text(encoding='utf-8-sig')
     hashes[path.name] = hashlib.sha256(path.read_bytes()).hexdigest()
-    text = original.replace('using Il2Cpp;\n', '').replace('using Il2CppTMPro;', 'using TMPro;')
+    text = original.replace('using Il2Cpp;\n', '').replace('using Il2CppTMPro;', 'using TMPro;').replace('Il2CppTMPro.', 'TMPro.')
     text = text.replace('using Il2CppInterop.Runtime.InteropTypes.Arrays;\n', '')
     text = text.replace('using MelonLoader;\n', '').replace('using MelonLoader.Utils;\n', '')
     text = text.replace('Il2CppSystem.Collections.Generic.', 'System.Collections.Generic.')
@@ -59,10 +59,10 @@ for path in source.glob('*.cs'):
     text = text.replace('ui.UpdateAcceptOfferButtonForSell();', 'ui.RefreshUI();')
     text = text.replace('public sealed class GameTradeAdapter', 'public sealed partial class GameTradeAdapter')
     text = text.replace('Passed = passed, baseline.CanTrade,',
-                        'GameVersion = UnityEngine.Application.version, ModVersion = "1.7.2",\n'
+                        'GameVersion = UnityEngine.Application.version, ModVersion = "1.7.3",\n'
                         '            NativeCategories = NativeCategoryPolicy.Categories().Select(c => new { c.Id, c.Name, HasIcon = c.HasDemandException || CategoryIconCatalog.Icons.ContainsKey(c.Id) }),\n'
                         '            Passed = passed, baseline.CanTrade,')
-    text = text.replace('1.6.1', '1.7.2')
+    text = text.replace('1.6.1', '1.7.3')
     # Palette and drawn controls now come from the release game's TabletStyle.
     text = text.replace('new Color(.93f, .85f, .65f)', 'InputPaper')
     text = text.replace('new Color(.88f, .81f, .60f)', 'CardPaper')

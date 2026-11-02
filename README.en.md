@@ -1,4 +1,4 @@
-# Best Offer 1.7.2
+# Best Offer 1.7.3
 
 A native mod for the full release of **Probably Stolen**: smart item selection, inventory protection and one-click trade-table placement. The interface follows the game's language, using Chinese or English. [简体中文](README.md)
 
@@ -7,9 +7,9 @@ A native mod for the full release of **Probably Stolen**: smart item selection, 
 - **Steam Workshop:** [Subscribe to Best Offer](https://steamcommunity.com/sharedfiles/filedetails/?id=3830638812), restart, review and enable it in the main-menu Mods screen, then restart as requested.
 - **Nexus manual installation:** Exit the game and copy the full-release package's `Mods/BestOffer` folder into the game directory. Enable it in the Mods screen. The native DLL belongs at `Mods/BestOffer/BestOffer.dll`; MelonLoader is not required.
 - In your shop, press **F8** or select **Offer Settings** on the trading tablet. Configure Inventory Rules, Category Rules, Offer Plans and Trade Settings. **Auto-fill Offer** places selected goods; review the game's quote and confirm the sale yourself.
-- Change hotkeys through the main-menu mod gear or Trade Settings. Both editors stay in sync. Defaults: **F8** for the panel and **F9** for read-only diagnostics while the panel is open. F1–F12 support optional Ctrl, Alt and Shift modifiers.
+- Change hotkeys through the main-menu mod gear or Trade Settings. Both editors stay in sync. Defaults: **F8** for the panel and **F9** for diagnostics while the panel is open, **Ctrl+F8** for Auto-fill and **Ctrl+F9** for Quick Sell. Any binding can be cleared to disable it. Quick Sell calculates and completes the sale without another confirmation. Trading hotkeys require a tradable buyer and the native tablet to be open. F1–F12 support optional Ctrl, Alt and Shift modifiers.
 
-Compatible game version: **0.46D (100-REV6), Steam build 26337366**. Version 1.7.0 adapts the UI to the full game's trading tablet and reads its categories, including Modified Seed: 61 rule categories including contraband and stolen goods. Version 1.7.1 adds working native mod-menu hotkey settings and fixes the details layout. Version 1.7.2 fixes early language probing during startup, improves text fallbacks and refreshes cached names after language changes. The existing solver, inventory and category policies, budgets and manual settlement behavior are retained.
+Compatible game version: **0.46D (100-REV6), Steam build 26337366**. Version 1.7.0 adapts the UI to the full game's trading tablet and reads its categories, including Modified Seed: 61 rule categories including contraband and stolen goods. Version 1.7.1 adds working native mod-menu hotkey settings and fixes the details layout. Version 1.7.2 fixes early language probing during startup, improves text fallbacks and refreshes cached names after language changes. The existing solver, inventory and category policies, and budgets are retained. Version 1.7.3 adds placement/direct-sale hotkeys, optional bindings for all four actions and correct full-release machine-output recognition, including printed weapons.
 
 Preserve `UserData/BestOffer-*.json` when updating. To migrate demo settings, close both games before copying these files into the full game's `UserData`. When local and Workshop copies coexist, the game uses the local copy; check which copy is enabled when updating.
 
@@ -27,7 +27,7 @@ Requires .NET 8 SDK, Python and the installed full game:
 .\scripts\BuildWorkshop.ps1 -GameDir 'E:\Steam\steamapps\common\Probably Stolen'
 ```
 
-Output: `workshop-release/1.7.2/content`. The command runs solver, category and hotkey tests; it does not install or upload. Game assemblies are read from your local installation and are not redistributed.
+Output: `workshop-release/1.7.3/content`. The command runs solver, category and hotkey tests; it does not install or upload. Game assemblies are read from your local installation and are not redistributed.
 
 [Native build details (Chinese)](README.Workshop.md) · [Third-party notices](THIRD-PARTY-NOTICES.md)
 

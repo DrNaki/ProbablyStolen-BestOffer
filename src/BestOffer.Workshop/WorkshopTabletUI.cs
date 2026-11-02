@@ -79,7 +79,7 @@ public sealed partial class BestOfferMod
         MakeBox(root, 24, 42, 1072, pageHeight - 64, Paper);
         TabletFrameImage(root, 24, 42, 1072, pageHeight - 64, Ink, true);
         MakeText(root, 36, 7, 650, 28, L.T("最佳报价"), 22, Ink);
-        MakeText(root, 828, 9, 200, 24, "BEST OFFER  ·  1.7.2", 12, Ink, TextAlignmentOptions.Right);
+        MakeText(root, 828, 9, 200, 24, "BEST OFFER  ·  1.7.3", 12, Ink, TextAlignmentOptions.Right);
         MakeButton(root, 1044, 6, 32, 28, "×", Close, Muted);
 
         string buyer = snapshot == null || string.IsNullOrEmpty(snapshot.ClientKey)
@@ -108,7 +108,7 @@ public sealed partial class BestOfferMod
 
         var footer = MakeBox(root, 48, pageHeight - 97, 1024, 1, Line);
         nativeStatus = MakeText(root, 48, pageHeight - 86, 806, 46, status, 13, Ink);
-        var help = MakeText(root, 874, pageHeight - 73, 198, 22, L.T("Esc 返回交易  ·  1.7.2"), 12, Muted, TextAlignmentOptions.Right);
+        var help = MakeText(root, 874, pageHeight - 73, 198, 22, L.T("Esc 返回交易  ·  1.7.3"), 12, Muted, TextAlignmentOptions.Right);
         bool showFooter = uiTab != 1 || !categoryPickerOpen;
         footer.SetActive(showFooter); nativeStatus.gameObject.SetActive(showFooter); help.gameObject.SetActive(showFooter);
         if (uiTab == 1 && categoryPickerOpen) BuildCategoryPicker(root);

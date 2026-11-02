@@ -30,7 +30,7 @@ public sealed partial class BestOfferMod : MelonMod
     bool showConfirm;
     GameObject? blocker;
     sealed record PendingCalculation(Task<SolveResult> Work, int Revision, bool QuickApply,
-        TradeSnapshot Snapshot, string Signature);
+        TradeSnapshot Snapshot, string Signature, bool QuickSell = false);
     PendingCalculation? pending;
     bool busy => pending != null;
     bool QuickApplying => pending is { QuickApply: true } && pending.Revision == revision;
@@ -93,14 +93,17 @@ public sealed partial class BestOfferMod : MelonMod
                 overBudgetPercent = saved.OverBudgetMode == OverBudgetMode.Percent;
                 overBudgetInput = saved.OverBudgetValue.ToString(CultureInfo.InvariantCulture);
                 lastValidOverBudgetValue = saved.OverBudgetValue;
-                panelHotkey = ManagerIntegration.NormalizeHotkey(saved.PanelHotkey, "F8");
-                auditHotkey = ManagerIntegration.NormalizeHotkey(saved.AuditHotkey, "F9");
+                panelHotkey = string.IsNullOrWhiteSpace(saved.PanelHotkey) ? "" : ManagerIntegration.NormalizeHotkey(saved.PanelHotkey, "F8");
+                auditHotkey = string.IsNullOrWhiteSpace(saved.AuditHotkey) ? "" : ManagerIntegration.NormalizeHotkey(saved.AuditHotkey, "F9");
+                placeHotkey = ManagerIntegration.NormalizeHotkey(saved.PlaceHotkey, "");
+                sellHotkey = ManagerIntegration.NormalizeHotkey(saved.SellHotkey, "");
                 toolbarX = float.IsFinite(saved.ToolbarX) ? saved.ToolbarX : -1;
                 toolbarY = float.IsFinite(saved.ToolbarY) ? saved.ToolbarY : 18;
             }
         }
         catch (Exception e) { LoggerInstance.Warning(L.T("读取报价选项失败: ") + e.Message); }
-        if (!KeyChord.ValidHotkeyPair(panelHotkey, auditHotkey)) { panelHotkey = "F8"; auditHotkey = "F9"; }
+        if (!KeyChord.ValidHotkeySet(panelHotkey, auditHotkey, "", "")) { panelHotkey = "F8"; auditHotkey = "F9"; }
+        RepairActionHotkeys();
         InitializeCategoryRules();
         InitializeLocalSettings();
         HarmonyInstance.Patch(AccessTools.Method(typeof(InputActionManager), "Update"),
@@ -151,6 +154,7 @@ public sealed partial class BestOfferMod : MelonMod
             AllowStolenDemandExceptions = allowStolenDemandExceptions,
             OverBudgetMode = overBudgetPercent ? OverBudgetMode.Percent : OverBudgetMode.Credits,
             OverBudgetValue = limit, PanelHotkey = panelHotkey, AuditHotkey = auditHotkey,
+            PlaceHotkey = placeHotkey, SellHotkey = sellHotkey,
             ToolbarX = toolbarX, ToolbarY = toolbarY, CategoryRules = categoryChoices
         };
     }
@@ -187,7 +191,8 @@ public sealed partial class BestOfferMod : MelonMod
         // intercepted even if Unity invokes the native Update before MelonUpdate.
         // UnityEngine.Input itself remains untouched; hotkeys and HitButton still work.
         if (ManagerIntegration.Visible) return false;
-        if (ManagerIntegration.Down(panelHotkey))
+        if (ManagerIntegration.Down(panelHotkey) ||
+            (ManagerIntegration.Down(placeHotkey) || ManagerIntegration.Down(sellHotkey)) && CanUseTradeHotkey())
         {
             SuppressTransitionInput();
             return true;
@@ -212,7 +217,7 @@ public sealed partial class BestOfferMod : MelonMod
             bool managerVisible = ManagerIntegration.Visible;
             if (managerVisible)
             {
-                pendingPanelToggle = pendingAudit = false;
+                ClearPendingHotkeyActions();
                 ResetSettingTooltip();
                 if (nativeLaunchers != null) nativeLaunchers.SetActive(false);
                 if (launcherNotice != null) launcherNotice.gameObject.SetActive(false);
@@ -276,8 +281,8 @@ public sealed partial class BestOfferMod : MelonMod
                     WriteDiagnostics();
                     if (work.QuickApply)
                     {
-                        bool applied = plans.Count > 0 && ApplySelected(false);
-                        ShowQuickNotice(status, applied ? L.T("摆货已完成\n等待确认成交") : null);
+                        bool applied = plans.Count > 0 && ApplySelected(work.QuickSell);
+                        ShowQuickNotice(status, applied ? (work.QuickSell ? L.T("出售已完成") : L.T("摆货已完成\n等待确认成交")) : null);
                     }
                 }
             }
@@ -316,6 +321,7 @@ public sealed partial class BestOfferMod : MelonMod
     void Toggle() { if (IsOpen) Close(); else Open(); }
     void Open()
     {
+        ClearPendingHotkeyActions();
         if (EmporiumEntry.Instance == null) return;
         CancelQuick();
         SuppressTransitionInput();
@@ -328,6 +334,7 @@ public sealed partial class BestOfferMod : MelonMod
     }
     void Close()
     {
+        ClearPendingHotkeyActions();
         CancelQuick();
         if (IsOpen) SuppressTransitionInput();
         IsOpen = false; captureHotkey = 0; pendingCapturedHotkey = ""; categoryPickerOpen = false;
@@ -428,7 +435,7 @@ public sealed partial class BestOfferMod : MelonMod
         status = snapshot?.CanTrade == true ? L.T("筛选条件已更改，请重新计算。") : L.T("规则已保存，买家到来后应用。");
         SaveRules();
     }
-    void Calculate(bool quickApply = false)
+    void Calculate(bool quickApply = false, bool quickSell = false)
     {
         if (busy) return;
         if (allowOverBudget && !TryOverBudgetNumber(out _)) { status = L.T("请输入有效的非负超出上限。"); return; }
@@ -474,7 +481,7 @@ public sealed partial class BestOfferMod : MelonMod
         pending = new PendingCalculation(
             Task.Run(() => OfferSolver.Solve(candidates, budget, variety, max, quickApply ? 1 : 12, receiptCap: receiptCap,
                 prioritizePreferred: prefer)),
-            revision, quickApply, snapshot, GameTradeAdapter.SnapshotSignature(snapshot));
+            revision, quickApply, snapshot, GameTradeAdapter.SnapshotSignature(snapshot), quickSell);
     }
     void WriteDiagnostics()
     {

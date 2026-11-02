@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <GameDir Condition="'$(GameDir)' == ''">E:\Steam\steamapps\common\Probably Stolen</GameDir>
+    <DefineConstants>$(DefineConstants);BESTOFFER_NATIVE;BESTOFFER_WORKSHOP_TEST</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Newtonsoft.Json"><HintPath>$(GameDir)\Probably Stolen_Data\Managed\Newtonsoft.Json.dll</HintPath></Reference>
+    <Compile Include="../InventorySourcePolicy.Tests/Program.cs" Link="Program.cs" />
+    <Compile Include="../InventorySourcePolicy.Tests/NativeFixtures.cs" Link="NativeFixtures.cs" />
+    <Compile Include="../../src/BestOffer.Workshop/Generated/InventorySourcePolicy.cs" Link="InventorySourcePolicy.cs" />
+    <Compile Include="../../src/BestOffer.Workshop/Generated/NativeInventorySourcePolicy.cs" Link="NativeInventorySourcePolicy.cs" />
+    <Compile Include="../../src/BestOffer.Workshop/Generated/TradeOptions.cs" Link="TradeOptions.cs" />
+    <Compile Include="../../src/BestOffer.Workshop/Generated/CategoryRuleLogic.cs" Link="CategoryRuleLogic.cs" />
+  </ItemGroup>
+</Project>

@@ -17,4 +17,15 @@ foreach (var pair in new[] { ("F8", "F9"), ("Ctrl+F9", "F9"), ("Shift+F8", "Alt+
 foreach (var pair in new[] { ("F8", "f8"), ("Ctrl+F8", "Control+f8"), ("Escape", "F9"),
     ("F8", "Shift+Escape"), ("", "F9"), ("F8", "Ctrl+Shift") })
     Check(!KeyChord.ValidHotkeyPair(pair.Item1, pair.Item2));
+foreach (var set in new[] {
+    new[] { "F8", "F9", "Ctrl+F8", "Ctrl+F9" }, new[] { "F8", "F9", "", "" },
+    new[] { "F8", "F9", "", "Shift+F9" }, new[] { "Ctrl+F8", "F9", "Alt+F8", "Shift+F9" },
+    new[] { "", "F9", "Ctrl+F8", "Ctrl+F9" }, new[] { "F8", "", "Ctrl+F8", "Ctrl+F9" },
+    new[] { "", "", "", "" }, new[] { "", "", "F8", "F9" } })
+    Check(KeyChord.ValidHotkeySet(set[0], set[1], set[2], set[3]));
+foreach (var set in new[] {
+    new[] { "F8", "F9", "f8", "Ctrl+F9" }, new[] { "F8", "F9", "Ctrl+F8", "Control+f8" },
+    new[] { "F8", "F9", "Escape", "" }, new[] { "F8", "F9", "", "Shift+Escape" },
+    new[] { "", "F9", "Ctrl+Shift", "" }, new[] { "", "", "F8", "f8" } })
+    Check(!KeyChord.ValidHotkeySet(set[0], set[1], set[2], set[3]));
 Console.WriteLine($"PASS: {assertions} hotkey parsing/roundtrip and binding-pair assertions.");

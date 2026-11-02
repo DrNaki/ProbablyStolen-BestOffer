@@ -45,7 +45,7 @@ internal static class ManagerIntegration
         }
         catch { return false; }
     }
-    internal static void SyncHotkeyBindings(string panelHotkey, string auditHotkey)
+    internal static void SyncHotkeyBindings(string panelHotkey, string auditHotkey, string placeHotkey, string sellHotkey)
     {
         // The manager edits its own binding snapshots, not live preference
         // entries. Update only our two rows; keep other mods' pending edits.
@@ -61,7 +61,7 @@ internal static class ManagerIntegration
                 var type = binding.GetType();
                 if (type.GetField("CategoryId", instance)?.GetValue(binding) as string != "BestOffer") continue;
                 string? value = (type.GetField("EntryId", instance)?.GetValue(binding) as string) switch
-                { "PanelHotkey" => panelHotkey, "AuditHotkey" => auditHotkey, _ => null };
+                { "PanelHotkey" => panelHotkey, "AuditHotkey" => auditHotkey, "PlaceHotkey" => placeHotkey, "SellHotkey" => sellHotkey, _ => null };
                 if (value == null) continue;
                 var valueField = type.GetField("Value", instance);
                 var parse = valueField?.FieldType.GetMethod("TryParse", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);

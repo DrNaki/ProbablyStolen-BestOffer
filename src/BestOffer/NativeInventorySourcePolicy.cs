@@ -58,9 +58,9 @@ public static class NativeInventorySourcePolicy
                 if (owner == null) return "";
                 if (!seen.Add(owner.Pointer)) return L.T("容器关联异常，无法安全取出");
                 var kind = GetContentsKind(owner, inventory);
-                // The moisture farm's bottle is the output receptacle. An empty
-                // bottle is equipment waiting for production, not a water product.
-                if (kind == InventoryContentKind.MachineProduct && owner.identifier == "moisture_farm" &&
+                // Liquid output bottles are production receptacles. An empty
+                // bottle is equipment waiting for production, not a product.
+                if (kind == InventoryContentKind.MachineProduct && IsLiquidOutputReceptacle(owner, inventory) &&
                     (!current.IsTag("LIQUID_CONTAINER_TAG") || WaterHelper.IsEmpty(current)))
                     kind = InventoryContentKind.MachineContent;
                 if (!InventorySourcePolicy.CanExtract(kind, options.IncludeContainerContents,
@@ -91,8 +91,26 @@ public static class NativeInventorySourcePolicy
 
     private static bool IsOutputInventory(GameItem machine, GameInventory inventory)
     {
+#if BESTOFFER_NATIVE
+        // The full game's machinery UI replaced fixed grids with semantic
+        // panels (including wrapped/nested output inventories). Match the real
+        // storage identity under the output role, never a translated caption,
+        // panel order or an item's type. New standard output panels need no ID
+        // whitelist; input/chip/module/power/note panels remain machine contents.
+        var panels = machine.contentWindow?.childElement?.TryCast<MachineryPanelRow>();
+        if (panels != null)
+        {
+            if (PanelContains(panels.GetPanel("output"), inventory) ||
+                PanelContains(panels.GetPanel("distillate"), inventory)) return true;
+            if (machine.identifier == "moisture_farm" && PanelContains(panels.GetPanel("container"), inventory)) return true;
+            // DNA manipulation keeps its active seed and disks installed; only
+            // the explicit finished-item ejection tray is an output source.
+            return machine.IsTag("DNA_MANIPULATOR_TAG") && PanelContains(panels.GetPanel("eject"), inventory);
+        }
+#endif
         // These are the native factories' physical output positions, confirmed
-        // against GameAssembly (not UI labels or arbitrary inventory names).
+        // against the legacy GameAssembly. Retain this path for the demo and
+        // older grids; never apply these coordinates to the new panel layout.
         // Unknown layouts remain machine contents and require explicit opt-in.
         var position = machine.identifier switch
         {
@@ -107,4 +125,30 @@ public static class NativeInventorySourcePolicy
         var output = grid.GetElement(position.X, position.Y)?.TryCast<GameInventory>();
         return output != null && output.Pointer == inventory.Pointer;
     }
+
+    private static bool IsLiquidOutputReceptacle(GameItem machine, GameInventory inventory)
+    {
+        if (machine.identifier == "moisture_farm") return true;
+#if BESTOFFER_NATIVE
+        var panels = machine.contentWindow?.childElement?.TryCast<MachineryPanelRow>();
+        return panels != null && PanelContains(panels.GetPanel("distillate"), inventory);
+#else
+        return false;
+#endif
+    }
+
+#if BESTOFFER_NATIVE
+    private static bool PanelContains(MachineryPanel? panel, GameInventory inventory)
+    {
+        if (panel == null) return false;
+        var storages = new List<GraphNodeStorage>();
+        panel.CollectStorage(storages);
+        foreach (var storage in storages)
+        {
+            var candidate = storage.TryCast<GameInventory>();
+            if (candidate != null && candidate.Pointer == inventory.Pointer) return true;
+        }
+        return false;
+    }
+#endif
 }

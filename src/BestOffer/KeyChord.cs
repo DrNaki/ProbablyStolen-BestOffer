@@ -28,4 +28,15 @@ internal readonly record struct KeyChord(string Key, bool Ctrl, bool Alt, bool S
         !p.Key.Equals("Escape", StringComparison.OrdinalIgnoreCase) &&
         !a.Key.Equals("Escape", StringComparison.OrdinalIgnoreCase) &&
         !p.ToString().Equals(a.ToString(), StringComparison.OrdinalIgnoreCase);
+    internal static bool ValidHotkeySet(string panel, string audit, string place, string sell)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (string binding in new[] { panel, audit, place, sell })
+        {
+            if (string.IsNullOrWhiteSpace(binding)) continue;
+            if (!TryParse(binding, out var chord) || chord.Key.Equals("Escape", StringComparison.OrdinalIgnoreCase) ||
+                !seen.Add(chord.ToString())) return false;
+        }
+        return true;
+    }
 }

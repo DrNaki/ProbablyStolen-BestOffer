@@ -1,5 +1,7 @@
 using DeepSpaceBestOffer;
+#if !BESTOFFER_WORKSHOP_TEST
 using Il2Cpp;
+#endif
 
 int assertions = 0;
 void Equal<T>(T expected, T actual, string message)
@@ -144,4 +146,89 @@ cycleB.parentInventory = new() { Owner = cycleA };
 Allowed(cycleA, ordinary, false, "malformed cyclic graph cannot authorize extraction");
 Allowed(new(), ordinary, false, "detached unknown items are not accessible stock");
 Equal(false, InventorySourcePolicy.MayExpand(InventoryContainerKind.None, true, true, true, true), "unrecognized assembled items never expand");
+
+#if BESTOFFER_NATIVE
+// Actual 100-REV6 factory panel roles. Unlike the demo's grid, the printer's
+// output is index 4, furnace index 3, and desequencer index 4. Role identity
+// also survives wrapper controls and reordered panels.
+var fullReleaseLayouts = new[]
+{
+    (Id: "printer", Roles: new[] { "power", "module", "input", "chip", "output", "note" }, Output: "output"),
+    (Id: "furnace", Roles: new[] { "power", "module", "input", "output", "note" }, Output: "output"),
+    (Id: "desequencer", Roles: new[] { "power", "module", "chip", "input", "output" }, Output: "output"),
+    (Id: "bottle_printer", Roles: new[] { "power", "output", "control" }, Output: "output"),
+    (Id: "box_dispenser", Roles: new[] { "power", "output", "control" }, Output: "output"),
+    (Id: "hydroponic", Roles: new[] { "power", "module", "water", "seed", "output", "note" }, Output: "output"),
+    (Id: "chem_finisher", Roles: new[] { "module", "container", "output", "control" }, Output: "output"),
+    (Id: "auto_butcher", Roles: new[] { "settings", "output" }, Output: "output"),
+    (Id: "moisture_farm", Roles: new[] { "power", "module", "container", "note" }, Output: "container"),
+    (Id: "evaporator", Roles: new[] { "power", "module", "container", "distillate", "note" }, Output: "distillate"),
+    (Id: "dna_manipulator", Roles: new[] { "power", "module", "input_disk", "seed", "output_disk", "note", "eject" }, Output: "eject")
+};
+foreach (var fixture in fullReleaseLayouts)
+{
+    var machine = new GameItem { identifier = fixture.Id, parentInventory = root };
+    machine.Types.Add("MACHINE"); machine.Tags.Add("CONTAINER_TAG");
+    if (fixture.Id == "dna_manipulator") machine.Tags.Add("DNA_MANIPULATOR_TAG");
+    var panels = new MachineryPanelRow();
+    machine.contentWindow = new PixelWindow { childElement = panels };
+    foreach (string role in fixture.Roles)
+    {
+        var panel = new MachineryPanel { role = role };
+        var slot = new GameInventory { Owner = machine }; panel.Storage.Add(slot); panels.Panels.Add(panel);
+        var sample = new GameItem { identifier = "identical_sample", parentInventory = slot, WaterVolume = 250 };
+        if (role == fixture.Output && fixture.Output is "container" or "distillate") sample.Tags.Add("LIQUID_CONTAINER_TAG");
+        for (int mask = 0; mask < 8; mask++)
+        {
+            var options = new TradeOptions { IncludeContainerContents = (mask & 1) != 0,
+                IncludeMachineContents = (mask & 2) != 0, IncludeMachineProducts = (mask & 4) != 0 };
+            bool expected = role == fixture.Output ? options.IncludeMachineProducts : options.IncludeMachineContents;
+            Allowed(sample, options, expected, fixture.Id + "/" + role + " source matrix " + mask);
+        }
+        if (role == fixture.Output)
+        {
+            // Same physical item through a different wrapper/graph alias must
+            // still resolve to the exact output inventory, not panel position.
+            panels.Panels.Reverse();
+            Allowed(sample, products, true, fixture.Id + " reordered output panel remains output");
+            if (fixture.Output is "container" or "distillate")
+            {
+                sample.WaterVolume = 0;
+                Allowed(sample, products, false, fixture.Id + " empty output bottle remains equipment");
+                Allowed(sample, machineInputsOnly, true, fixture.Id + " empty output bottle uses machines option");
+                sample.WaterVolume = 250;
+            }
+            panel.Storage.Clear();
+            Allowed(sample, products, false, fixture.Id + " removed/replaced output storage cannot retain classification");
+            panel.Storage.Add(slot);
+            if (fixture.Id == "printer")
+            {
+                sample.Types.Add("FIREARM");
+                var ammoSlot = new GameInventory { Owner = sample };
+                var ammo = new GameItem { identifier = "ammo", parentInventory = ammoSlot };
+                Allowed(sample, products, true, "printed weapon is a product regardless of firearm type");
+                Allowed(ammo, allMachine, false, "printed weapon magazine stays assembled");
+                machine.parentInventory = boxSlot;
+                Allowed(sample, products, false, "printer nested in excluded outer storage still protected");
+                Allowed(sample, new() { IncludeMachineProducts = true, IncludeContainerContents = true }, true,
+                    "printer output in allowed outer storage becomes accessible");
+                machine.parentInventory = root;
+            }
+        }
+    }
+}
+
+var noOutputMachine = new GameItem { identifier = "unknown_machine_with_storage", parentInventory = root };
+noOutputMachine.Types.Add("MACHINE");
+var noOutputPanels = new MachineryPanelRow();
+var ordinaryStoragePanel = new MachineryPanel { role = "storage" };
+var ordinaryStorageSlot = new GameInventory { Owner = noOutputMachine };
+ordinaryStoragePanel.Storage.Add(ordinaryStorageSlot); noOutputPanels.Panels.Add(ordinaryStoragePanel);
+noOutputMachine.contentWindow = new PixelWindow { childElement = noOutputPanels };
+Allowed(new GameItem { parentInventory = ordinaryStorageSlot }, products, false,
+    "storage, tank, seed and other ambiguous panels are not inferred as products");
+Allowed(new GameItem { parentInventory = ordinaryStorageSlot }, machineInputsOnly, true,
+    "ambiguous native panels remain explicit machine contents");
+#endif
+
 Console.WriteLine($"PASS: {assertions} inventory source assertions (native API graph fixtures; no Unity runtime)");

@@ -9,6 +9,15 @@ internal static class LocalizationCatalog
 {
     internal static readonly IReadOnlyDictionary<string, string> English = new Dictionary<string, string>(StringComparer.Ordinal)
     {
+        ["超出的金额不收取；一键售卖快捷键无需再次确认。"] = "Value above budget is forfeited. Quick Sell hotkeys sell without another confirmation.",
+        ["出售已完成"] = "Sale Completed",
+        ["快捷键不能重复，请重新选择。"] = "Hotkeys must be different. Choose another binding.",
+        ["一键摆货  /  "] = "Auto-fill  /  ",
+        ["一键售卖  /  "] = "Quick Sell  /  ",
+        ["未绑定"] = "Unbound",
+        ["清除"] = "Clear",
+        ["计算最佳方案并摆货，不自动成交。\n仅在可交易时生效，清除后禁用。"] = "Find and place the best offer without selling.\nOnly works when trading is available. Clear to disable.",
+        ["直接计算并出售最佳方案，无需再次确认。\n仍遵守保护规则与预算限制，清除后禁用。"] = "Find and sell the best offer without another confirmation.\nProtection rules and budget limits apply. Clear to disable.",
         ["最佳报价 / Best Offer"] = "Best Offer",
         ["点击「计算最佳报价」开始。"] = "Click Find Best Offer to begin.",
         ["读取偏好失败: "] = "Could not load preferences: ",
@@ -202,7 +211,7 @@ internal static class LocalizationCatalog
         ["面板快捷键  /  "] = "Panel Hotkey / ",
         ["诊断快捷键  /  "] = "Diagnostics Hotkey / ",
         ["修改快捷键"] = "Edit Hotkeys",
-        ["点击对应按钮，然后按 F1–F12 设置快捷键；按 Esc 取消。\n支持 Ctrl / Alt / Shift 组合键，请避免与其他模组重复。"] = "Click a button, then press F1–F12 to set its hotkey; Esc cancels.\nSupports Ctrl / Alt / Shift combinations. Avoid shortcuts used by other mods.",
+        ["点击按钮后按 F1–F12；Esc 取消，清除可禁用对应快捷键。\n支持 Ctrl / Alt / Shift 组合键，请避免与其他模组重复。"] = "Click a button, then press F1–F12; Esc cancels. Clear disables that hotkey.\nSupports Ctrl / Alt / Shift combinations. Avoid shortcuts used by other mods.",
         ["快捷键已保存。F5/F6 用于第三方 Mod，请避免与其他 Mod 的快捷键重复。"] = "Hotkey saved. F5/F6 are used by other mods; avoid conflicting shortcuts.",
         ["未找到分类图标：{0} / {1} / {2}"] = "Category icon not found: {0} / {1} / {2}",
         ["分类图标对齐失败，保留原图：{0} / {1}"] = "Could not align category icon; keeping the original: {0} / {1}",

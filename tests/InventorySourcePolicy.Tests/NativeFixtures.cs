@@ -1,11 +1,14 @@
 // Native graph fixtures exercise adapter semantics without loading Unity. The
 // public surfaces below mirror dump.cs; these tests do not claim runtime proof.
+#if !BESTOFFER_WORKSHOP_TEST
 namespace Il2Cpp;
+#endif
 
 public class NativeObject
 {
     private static int nextPointer;
     public IntPtr Pointer { get; } = new(++nextPointer);
+    public IntPtr NativeId() => Pointer;
     public T? TryCast<T>() where T : class => this as T;
 }
 
@@ -21,7 +24,9 @@ public class GameItem : NativeObject
     public bool IsTag(string tag) => Tags.Contains(tag);
 }
 
-public class GameInventory : NativeObject
+public class GraphNodeStorage : NativeObject { }
+
+public class GameInventory : GraphNodeStorage
 {
     public GameItem? Owner;
     public GameItem? GetParentItem() => Owner;
@@ -38,3 +43,19 @@ public class GridPixelElement : NativeObject
 }
 
 public static class WaterHelper { public static bool IsEmpty(GameItem item) => item.WaterVolume == 0; }
+
+// Full-release factories use semantic machinery panels; each panel recursively
+// exposes only its physical storage, including intake/stack wrappers. Display
+// order is intentionally unrelated to the factory's underlying panel order.
+public class MachineryPanelRow : NativeObject
+{
+    public readonly List<MachineryPanel> Panels = new();
+    public MachineryPanel? GetPanel(string role) => Panels.Find(p => p.role == role);
+}
+
+public class MachineryPanel : NativeObject
+{
+    public string role = "";
+    public readonly List<GraphNodeStorage> Storage = new();
+    public void CollectStorage(List<GraphNodeStorage> list) => list.AddRange(Storage);
+}

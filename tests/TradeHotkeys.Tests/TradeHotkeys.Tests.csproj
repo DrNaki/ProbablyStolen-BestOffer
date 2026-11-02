@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- Remaining partial-class UI fields are unused by this isolated host. -->
+    <NoWarn>$(NoWarn);CS0169;CS0414</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Test the generated native implementation, not a copied action policy. -->
+    <Compile Include="../../src/BestOffer.Workshop/Generated/ManagedSettings.cs" Link="ManagedSettings.cs" />
+    <Compile Include="../../src/BestOffer.Workshop/Generated/ManagerIntegration.cs" Link="ManagerIntegration.cs" />
+    <Compile Include="../../src/BestOffer.Workshop/Generated/KeyChord.cs" Link="KeyChord.cs" />
+  </ItemGroup>
+</Project>
